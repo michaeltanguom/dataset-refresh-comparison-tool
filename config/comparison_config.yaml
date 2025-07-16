@@ -1,0 +1,146 @@
+# Dataset Comparison Tool Configuration
+# This file controls all aspects of the comparison pipeline
+
+# Data source configuration
+data_sources:
+  dataset_1:
+    folder: "Feb2025"     # Path to first dataset folder
+    period_name: "feb"          # Identifier for first time period
+  dataset_2:
+    folder: "July2025"     # Path to second dataset folder  
+    period_name: "july"         # Identifier for second time period
+
+# Database configuration
+database:
+  path: "hcr_comparison.db"     # DuckDB database file path
+  
+# Schema configuration
+schema:
+  schema_folder: "schema"       # Folder containing SQL schema files
+  default_schema: "hcr_default" # Default schema name to use
+  schema_mapping:               # Map sheet types to specific schemas
+    highly_cited_only: "hcr_default"
+    incites_researchers: "hcr_default"
+    # Future: could have different schemas for different data types
+    # json_dataset: "json_schema"
+    # csv_dataset: "csv_schema"
+  
+# Sheets to process from Excel files
+sheets_to_process:
+  - "Highly Cited only"
+  - "Incites Researchers"
+
+# Column mapping from Excel columns to normalised names
+column_mapping:
+  name: "Name"
+  percent_docs_cited: "% Docs Cited"
+  web_of_science_documents: "Web of Science Documents"
+  rank: "Rank"
+  times_cited: "Times Cited"
+  affiliation: "Affiliation"
+  web_of_science_researcherid: "Web of Science ResearcherID"
+  category_normalised_citation_impact: "Category Normalized Citation Impact"
+  orcid: "ORCID"
+  highly_cited_papers: "Highly Cited Papers"
+  hot_papers: "Hot Papers"
+  esi_field: "ESI Field"
+  indicative_cross_field_score: "Indicative Cross-Field Score"
+
+# Column mapping variants (handles spelling differences)
+column_mapping_variants:
+  category_normalised_citation_impact:
+    - "Category Normalized Citation Impact"
+    - "Category Normalised Citation Impact"
+
+# Critical columns required for pipeline to run
+critical_columns:
+  - "name"
+  - "times_cited"
+  - "highly_cited_papers"
+  - "hot_papers"
+  - "indicative_cross_field_score"
+  - "esi_field"
+
+# Validation rules for data quality checking
+validation_rules:
+  times_cited:
+    min: 50
+    max: 100000
+    required: true
+  highly_cited_papers:
+    min: 0
+    max: 200
+    required: true
+  hot_papers:
+    min: 0
+    max: 100
+    required: true
+  indicative_cross_field_score:
+    min: 0
+    max: 10
+    required: true
+  percent_docs_cited:
+    min: 0
+    max: 100
+    required: false
+  name:
+    required: true
+    min_length: 2
+  esi_field:
+    required: true
+    min_length: 2
+
+# Output configuration
+output:
+  reports_folder: "comparison_reports"
+  
+  # Optional custom folder names for each sheet type
+  # If not specified, uses normalised sheet names
+  folder_names:
+    highly_cited_only: "highly_cited_only"
+    incites_researchers: "incites_researchers"
+
+# Table naming configuration
+table_naming:
+  prefix: "df"  # Results in table names like: df_biology_feb_incites_researchers
+
+# Data cleaning configuration
+data_cleaning:
+  remove_duplicates: true
+  duplicate_check_columns:
+    - "name"
+    - "esi_field"
+  
+  handle_nulls:
+    strategy: "fail"  # Options: "fail", "skip", "default"
+    
+  outlier_detection:
+    enabled: true
+    methods:
+      - "iqr"      # Interquartile range
+      - "zscore"   # Z-score based
+    z_threshold: 3
+    
+# Comparison configuration  
+comparison:
+  # Columns to compare for changes
+  comparison_columns:
+    - "highly_cited_papers"
+    - "indicative_cross_field_score"
+    - "hot_papers"
+    - "times_cited"
+  
+  # Tolerance for floating point comparisons
+  float_tolerance: 0.001
+  
+  # Include unchanged researchers in output
+  include_unchanged: true
+    
+# Logging configuration
+logging:
+  level: "INFO"           # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  log_to_file: true
+  log_file_path: "comparison_pipeline.log"
+  max_file_size_mb: 10
+  backup_count: 5
