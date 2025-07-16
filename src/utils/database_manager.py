@@ -62,13 +62,13 @@ class DatabaseManager:
                 except Exception as e:
                     logger.warning(f"Error closing connection: {e}")
     
-    def execute_query(self, query: str, params: Optional[Dict] = None) -> Any:
+    def execute_query(self, query: str, params: Optional[List] = None) -> Any:
         """
         Execute a query and return results
         
         Args:
             query: SQL query to execute
-            params: Query parameters (optional)
+            params: Query parameters as a list (optional)
             
         Returns:
             Query results
@@ -86,13 +86,13 @@ class DatabaseManager:
                 logger.error(f"Query execution failed: {e}")
                 raise DatabaseError(f"Query failed: {e}", query=query)
     
-    def execute_non_query(self, query: str, params: Optional[Dict] = None) -> None:
+    def execute_non_query(self, query: str, params: Optional[List] = None) -> None:
         """
         Execute a non-query statement (CREATE, INSERT, etc.)
         
         Args:
             query: SQL statement to execute
-            params: Query parameters (optional)
+            params: Query parameters as a list (optional)
         """
         with self.get_connection() as conn:
             try:
@@ -122,7 +122,7 @@ class DatabaseManager:
             FROM information_schema.tables 
             WHERE table_name = ? AND table_type = 'BASE TABLE'
             """
-            result = self.execute_query(query, {'table_name': table_name})
+            result = self.execute_query(query, [table_name])
             return result.iloc[0]['count'] > 0
         except Exception as e:
             logger.warning(f"Error checking if table exists: {e}")
@@ -344,21 +344,6 @@ class DatabaseManager:
         except Exception as e:
             logger.warning(f"Could not get database size: {e}")
             return 0.0
-    
-    def optimize_database(self) -> None:
-        """
-        Optimize database performance
-        Runs VACUUM and ANALYZE commands
-        """
-        try:
-            with self.get_connection() as conn:
-                logger.info("Optimizing database...")
-                conn.execute("VACUUM")
-                conn.execute("ANALYZE")
-                logger.info("Database optimization completed")
-        except Exception as e:
-            logger.warning(f"Database optimization failed: {e}")
-
 
 def create_database_manager(db_path: str) -> DatabaseManager:
     """

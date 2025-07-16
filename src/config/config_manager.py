@@ -302,6 +302,22 @@ class ConfigManager:
         
         return schema_mapping.get(normalised_sheet_name, default_schema)
     
+    def get_schema_file_path(self, schema_name: str) -> str:
+        """
+        Get the full path to a schema SQL file
+        
+        Args:
+            schema_name: Name of the schema (without .sql extension)
+            
+        Returns:
+            Full path to the schema file
+        """
+        schema_config = self.get_schema_config()
+        schema_folder = schema_config.get('schema_folder', 'schema')
+        schema_file = f"{schema_name}.sql"
+        
+        return str(Path(schema_folder) / schema_file)
+    
     def get_config_summary(self) -> Dict[str, Any]:
         """
         Get summary of configuration for logging/debugging

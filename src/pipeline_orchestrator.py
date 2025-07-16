@@ -1,6 +1,9 @@
 """
 Pipeline Orchestrator for Dataset Comparison System
 Coordinates the complete EtLT pipeline: Extract → Light Transform → Load → Transform (Clean + Compare)
+
+Run as a module without Prefect integration
+python -m src.pipeline_orchestrator --config config/comparison_config.yaml
 """
 
 import sys
@@ -11,21 +14,38 @@ from dataclasses import asdict
 import argparse
 
 # Add src to path for imports
-sys.path.append(str(Path(__file__).parent))
+current_dir = Path(__file__).parent
+if str(current_dir) not in sys.path:
+    sys.path.insert(0, str(current_dir))
 
-from config.config_manager import ConfigManager
-from config.config_validator import ConfigValidator
-from extract.extract_light_transform import ExcelDataExtractor, DataNormaliser
-from load.load_duckdb import DataLoader
-from transform.clean_duckdb_tables import DataCleaner
-from transform.compare_datasets import DataComparator
-from utils.exceptions import (
-    ConfigurationError, ExtractionError, NormalisationError, 
-    DatabaseError, DataQualityError, ComparisonError, PipelineError
-)
-from utils.logging_config import setup_logging, get_logger
-from utils.common import format_number_with_commas
-
+try:
+    # Try relative imports first (when run as part of src package)
+    from .config.config_manager import ConfigManager
+    from .config.config_validator import ConfigValidator
+    from .extract.extract_light_transform import ExcelDataExtractor, DataNormaliser
+    from .load.load_duckdb import DataLoader
+    from .transform.clean_duckdb_tables import DataCleaner
+    from .transform.compare_datasets import DataComparator
+    from .utils.exceptions import (
+        ConfigurationError, ExtractionError, NormalisationError, 
+        DatabaseError, DataQualityError, ComparisonError, PipelineError
+    )
+    from .utils.logging_config import setup_logging, get_logger
+    from .utils.common import format_number_with_commas
+except ImportError:
+    # Fall back to absolute imports (when run directly)
+    from config.config_manager import ConfigManager
+    from config.config_validator import ConfigValidator
+    from extract.extract_light_transform import ExcelDataExtractor, DataNormaliser
+    from load.load_duckdb import DataLoader
+    from transform.clean_duckdb_tables import DataCleaner
+    from transform.compare_datasets import DataComparator
+    from utils.exceptions import (
+        ConfigurationError, ExtractionError, NormalisationError, 
+        DatabaseError, DataQualityError, ComparisonError, PipelineError
+    )
+    from utils.logging_config import setup_logging, get_logger
+    from utils.common import format_number_with_commas
 
 class PipelineOrchestrator:
     """
