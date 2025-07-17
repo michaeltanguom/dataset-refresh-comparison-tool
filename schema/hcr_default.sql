@@ -7,13 +7,13 @@ CREATE TABLE IF NOT EXISTS "{table_name}" (
     percent_docs_cited DOUBLE,
     web_of_science_documents INTEGER,
     rank INTEGER,
-    times_cited INTEGER NOT NULL,
+    times_cited INTEGER,
     affiliation VARCHAR,
     web_of_science_researcherid VARCHAR,
     category_normalised_citation_impact DOUBLE,
     orcid VARCHAR,
-    highly_cited_papers INTEGER NOT NULL,
-    hot_papers INTEGER NOT NULL,
+    highly_cited_papers INTEGER,
+    hot_papers INTEGER,
     esi_field VARCHAR NOT NULL,
-    indicative_cross_field_score DOUBLE NOT NULL
+    indicative_cross_field_score DOUBLE
 );

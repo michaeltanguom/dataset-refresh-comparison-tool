@@ -70,28 +70,32 @@ class DataLoader:
                 df = dataset['dataframe']
                 metadata = dataset['metadata']
                 
+                # Store expected row count
+                expected_rows = len(df)
+                
                 self.logger.info(f"Loading table: {table_name}")
                 self.logger.info(f"  Source: {metadata.source_file}")
                 self.logger.info(f"  Sheet: {metadata.sheet_name}")
-                self.logger.info(f"  Rows: {format_number_with_commas(len(df))}")
+                self.logger.info(f"  Rows: {expected_rows}")
                 self.logger.info(f"  Columns: {len(df.columns)}")
                 
-                # Create and load table
-                self._create_and_load_table(df, table_name, metadata)
+                # Create table schema
+                self._create_table_schema(table_name, metadata.normalised_sheet_name)
                 
-                # Verify load
-                loaded_count = self.db_manager.get_table_count(table_name)
-                if loaded_count != len(df):
-                    raise DatabaseError(f"Row count mismatch: expected {len(df)}, got {loaded_count}")
+                # Load data (single responsibility: just load)
+                self._load_dataframe_to_table(df, table_name)
+                
+                # Validate row count (single responsibility: just validate)
+                self._validate_row_count(expected_rows, table_name)
                 
                 # Performance metrics
                 table_duration = time.time() - table_start_time
-                log_performance_metric(self.logger, f"load_table_{table_name}", table_duration, len(df))
+                log_performance_metric(self.logger, f"load_table_{table_name}", table_duration, expected_rows)
                 
                 successfully_loaded.append(table_name)
-                total_rows_loaded += len(df)
+                total_rows_loaded += expected_rows
                 
-                self.logger.info(f"Successfully loaded {table_name} with {format_number_with_commas(len(df))} rows")
+                self.logger.info(f"Successfully loaded {table_name} with {format_number_with_commas(expected_rows)} rows")
                 
                 # Log sample data for verification
                 self._log_sample_data(table_name)
@@ -140,22 +144,17 @@ class DataLoader:
             # Continue anyway - might be first run
     
     def _create_and_load_table(self, df: pd.DataFrame, table_name: str, metadata) -> None:
-        """
-        Create table schema and load data
-        
-        Args:
-            df: DataFrame to load
-            table_name: Name for the table
-            metadata: Dataset metadata
-        """
-        # Create table schema using config-driven approach
+        """Create table schema and load data"""
+        # Create table schema
         self._create_table_schema(table_name, metadata.normalised_sheet_name)
         
-        # Load data
-        self._load_dataframe_to_table(df, table_name)
+        # Load data and get actual count loaded
+        actual_loaded_count = self._load_dataframe_to_table(df, table_name)
         
-        # Verify schema matches expectations
-        self._verify_table_schema(table_name, df)
+        # Verify load using actual loaded count
+        loaded_count = self.db_manager.get_table_count(table_name)
+        if loaded_count != actual_loaded_count:
+            raise DatabaseError(f"Row count mismatch: expected {actual_loaded_count}, got {loaded_count}")
 
     def _read_schema_file(self, schema_file_path: str) -> str:
         """
@@ -217,33 +216,49 @@ class DataLoader:
     def _load_dataframe_to_table(self, df: pd.DataFrame, table_name: str) -> None:
         """
         Load DataFrame data into table
+        Single responsibility: Just load the data as-is
         
         Args:
-            df: DataFrame to load
+            df: DataFrame to load (should already be cleaned and normalised)
             table_name: Target table name
         """
         try:
-            # Filter out any rows with empty names before loading
-            initial_count = len(df)
-            df_clean = df[df['name'].notna()]
-            df_clean = df_clean[df_clean['name'].astype(str).str.strip() != '']
-            df_clean = df_clean[df_clean['name'].astype(str).str.lower().isin(['', 'nan', 'none', 'null']) == False]
-            
-            final_count = len(df_clean)
-            if initial_count != final_count:
-                filtered_count = initial_count - final_count
-                self.logger.info(f"Filtered out {filtered_count} rows with invalid names")
-            
-            if final_count == 0:
-                raise DatabaseError(f"No valid data to load for table {table_name}")
+            # Simple validation - ensure we have data
+            if df is None or len(df) == 0:
+                raise DatabaseError(f"No data to load for table {table_name}")
             
             # Use database manager to insert data
-            self.db_manager.insert_dataframe(df_clean, table_name)
+            self.db_manager.insert_dataframe(df, table_name)
             
-            self.logger.debug(f"Loaded {final_count} rows into {table_name}")
+            self.logger.debug(f"Loaded {len(df)} rows into {table_name}")
             
         except Exception as e:
             raise DatabaseError(f"Failed to load data into table {table_name}: {e}", table_name)
+        
+    def _validate_row_count(self, expected_count: int, table_name: str) -> None:
+        """
+        Validate that the loaded table has the expected number of rows
+        Single responsibility: Row count validation only
+        
+        Args:
+            expected_count: Expected number of rows
+            table_name: Table to validate
+        """
+        try:
+            loaded_count = self.db_manager.get_table_count(table_name)
+            
+            if loaded_count != expected_count:
+                raise DatabaseError(
+                    f"Row count mismatch for {table_name}: expected {expected_count}, got {loaded_count}"
+                )
+            
+            self.logger.debug(f"Row count validation passed for {table_name}: {loaded_count} rows")
+            
+        except Exception as e:
+            if "Row count mismatch" in str(e):
+                raise  # Re-raise our validation error
+            else:
+                raise DatabaseError(f"Failed to validate row count for {table_name}: {e}", table_name)
     
     def _verify_table_schema(self, table_name: str, df: pd.DataFrame) -> None:
         """

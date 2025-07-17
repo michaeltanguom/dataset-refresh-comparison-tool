@@ -100,9 +100,9 @@ output:
     highly_cited_only: "highly_cited_only"
     incites_researchers: "incites_researchers"
 
-# Table naming configuration
+# Dataframe naming configuration for Et phase
 table_naming:
-  prefix: "df"  # Results in table names like: df_biology_feb_incites_researchers
+  prefix: "df"
 
 # Data cleaning configuration
 data_cleaning:

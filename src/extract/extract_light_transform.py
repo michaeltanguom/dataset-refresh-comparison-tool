@@ -73,16 +73,14 @@ class DataExtractor(ABC):
         pass
     
     def generate_table_name(self, subject: str, period_name: str, sheet_name: str) -> str:
-        """Generate standardised table name"""
-        table_config = self.config.get_table_naming_config()
-        prefix = table_config['prefix']
-        
+        """Generate standardised table name (without prefix for database tables)"""
         # Normalise all components
         norm_subject = normalise_text(subject)
         norm_period = normalise_text(period_name)
         norm_sheet = normalise_text(sheet_name)
         
-        return f"{prefix}_{norm_subject}_{norm_period}_{norm_sheet}"
+        # Return clean table name without df_ prefix (matches POC approach)
+        return f"{norm_subject}_{norm_period}_{norm_sheet}"
 
 
 class ExcelDataExtractor(DataExtractor):
@@ -92,7 +90,7 @@ class ExcelDataExtractor(DataExtractor):
     """
     
     def extract_files(self, folder_path: str, period_name: str) -> Dict[str, Dict[str, Any]]:
-        """Extract Excel files to DataFrames with comprehensive metadata"""
+        """Extract Excel files to DataFrames with comprehensive metadata and robust validation"""
         start_time = time.time()
         
         folder_path = Path(folder_path)
@@ -146,18 +144,56 @@ class ExcelDataExtractor(DataExtractor):
                             try:
                                 # Read the sheet
                                 self.logger.info(f"Reading sheet: {sheet_name}")
-                                df = pd.read_excel(file_path, sheet_name=sheet_name)
+                                df = pd.read_excel(file_path, sheet_name=sheet_name, header=0)
                                 
-                                # Clean column names
+                                # === APPLY OLD SYSTEM'S ROBUST VALIDATION ===
+                                
+                                # FIX 1: Check if DataFrame is empty or has no columns (from old system)
+                                if df.empty or len(df.columns) == 0:
+                                    self.logger.warning(f"Sheet '{sheet_name}' in {file_path.name} is empty or has no columns - skipping")
+                                    continue
+                                
+                                # FIX 2: Robust column name cleaning (from old system)
+                                if len(df.columns) > 0:
+                                    # Ensure columns are strings before applying string operations
+                                    df.columns = [str(col).strip() if col is not None else 'Unnamed' for col in df.columns]
+                                else:
+                                    self.logger.warning(f"Sheet '{sheet_name}' in {file_path.name} has no columns to process - skipping")
+                                    continue
+                                
+                                self.logger.info(f"Sheet '{sheet_name}' original columns: {list(df.columns)}")
+                                
+                                # Clean column names using your existing function
                                 df = clean_dataframe_columns(df)
                                 
+                                # Additional validation after cleaning
                                 if df.empty:
-                                    self.logger.warning(f"Sheet '{sheet_name}' in {file_path.name} is empty - skipping")
+                                    self.logger.warning(f"Sheet '{sheet_name}' in {file_path.name} became empty after cleaning - skipping")
                                     continue
                                 
-                                if len(df.columns) == 0:
-                                    self.logger.warning(f"Sheet '{sheet_name}' in {file_path.name} has no columns - skipping")
-                                    continue
+                                # FIX 3: Apply old system's name filtering logic HERE (not in load phase)
+                                # This ensures consistent row counts throughout the pipeline
+                                initial_count = len(df)
+                                
+                                # Check if 'Name' column exists before filtering
+                                if 'Name' in df.columns:
+                                    # Apply the exact same filtering logic as the old working system
+                                    df = df[df['Name'].notna()]  # Remove NaN
+                                    df = df[df['Name'].astype(str).str.strip() != '']  # Remove empty strings
+                                    df = df[df['Name'].astype(str) != 'nan']  # Remove string 'nan'
+                                    df = df[df['Name'].astype(str).str.lower() != 'none']  # Remove string 'none'
+                                    
+                                    final_count = len(df)
+                                    if initial_count != final_count:
+                                        self.logger.info(f"Filtered out {initial_count - final_count} rows with invalid names from '{sheet_name}'")
+                                    
+                                    # Ensure we still have data after filtering
+                                    if final_count == 0:
+                                        self.logger.warning(f"Sheet '{sheet_name}' in {file_path.name} has no valid data after filtering - skipping")
+                                        continue
+                                else:
+                                    self.logger.warning(f"Sheet '{sheet_name}' in {file_path.name} has no 'Name' column")
+                                    # Continue anyway, but log this issue
                                 
                                 # Generate table name
                                 table_name = self.generate_table_name(subject, period_name, sheet_name)
@@ -165,7 +201,7 @@ class ExcelDataExtractor(DataExtractor):
                                 # Calculate extraction time for this sheet
                                 sheet_duration = time.time() - sheet_start_time
                                 
-                                # Create metadata
+                                # Create metadata with ACTUAL final row count (after filtering)
                                 metadata = DatasetMetadata(
                                     source_file=str(file_path),
                                     subject=subject,
@@ -173,7 +209,7 @@ class ExcelDataExtractor(DataExtractor):
                                     sheet_name=sheet_name,
                                     normalised_sheet_name=normalise_text(sheet_name),
                                     table_name=table_name,
-                                    row_count=len(df),
+                                    row_count=len(df),  # This is now the CORRECT count after filtering
                                     columns_mapped={},  # Will be populated during normalisation
                                     processing_timestamp=generate_timestamp(),
                                     extraction_duration_seconds=sheet_duration
@@ -226,10 +262,9 @@ class ExcelDataExtractor(DataExtractor):
         
         return extracted_data
 
-
 class DataNormaliser:
     """
-    Light Transform: Normalise column names and validate mappings
+    Light Transform: Normalise column names and validate mappings for schema validation
     Single responsibility: Column normalisation and validation only
     """
     
@@ -330,7 +365,7 @@ class DataNormaliser:
         Normalise a single DataFrame's column names
         
         Args:
-            df: DataFrame to normalise
+            df: DataFrame to normalise (should already be cleaned in extraction phase)
             sheet_name: Name of sheet for logging
             
         Returns:
@@ -339,7 +374,7 @@ class DataNormaliser:
         self.logger.info(f"Normalising columns for sheet: {sheet_name}")
         self.logger.info(f"Original columns: {list(df.columns)}")
         
-        # Map columns using lookup table
+        # Step 1: Map columns using lookup table
         normalised_df = pd.DataFrame()
         mapping_applied = {}
         unmapped_columns = []
@@ -370,7 +405,7 @@ class DataNormaliser:
         if unmapped_columns:
             self.logger.info(f"Unmapped columns: {unmapped_columns}")
         
-        # Check for missing critical columns
+        # Step 2: Check for missing critical columns
         missing_critical = set(self.critical_columns) - set(normalised_df.columns)
         if missing_critical:
             raise NormalisationError(
@@ -379,7 +414,7 @@ class DataNormaliser:
                 list(missing_critical)
             )
         
-        # Add missing optional columns with defaults
+        # Step 3: Add missing optional columns with defaults
         all_expected_columns = set(self.column_mapping.keys())
         missing_optional = all_expected_columns - set(normalised_df.columns) - missing_critical
         
@@ -387,11 +422,12 @@ class DataNormaliser:
             normalised_df[target_col] = ""  # Default empty value
             self.logger.info(f"Added missing optional column '{target_col}' with default value")
         
-        # Ensure consistent column order
+        # Step 4: Ensure consistent column order
         column_order = list(self.column_mapping.keys())
         normalised_df = normalised_df.reindex(columns=column_order)
         
         self.logger.info(f"Final normalised columns: {list(normalised_df.columns)}")
+        self.logger.info(f"Final row count: {len(normalised_df)}")
         
         return normalised_df, mapping_applied
     

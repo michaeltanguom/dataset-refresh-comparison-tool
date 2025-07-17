@@ -172,38 +172,70 @@ class DataComparator:
         return comparison_results
     
     def _group_tables_for_comparison(self, table_names: List[str]) -> Dict[str, Dict[str, str]]:
-        """
-        Group tables by subject and sheet type for comparison
-        
-        Args:
-            table_names: List of table names
-            
-        Returns:
-            Dictionary mapping comparison keys to table pairs
-        """
+        """Group tables by subject and sheet type for comparison"""
         self.logger.info("Grouping tables for comparison")
         
         # Parse table names to extract components
         table_info = {}
         for table_name in table_names:
             try:
-                # Expected format: df_subject_period_sheet
+                # Expected format: {subject}_{period}_{sheet_type}
+                # Where subject can be multi-word like "space_science"
+                # And sheet_type can be multi-word like "highly_cited_only"
+                
                 parts = table_name.split('_')
-                if len(parts) >= 4:
-                    prefix = parts[0]
-                    subject = parts[1]
-                    period = parts[2]
-                    sheet = '_'.join(parts[3:])  # Handle multi-word sheet names
-                    
-                    key = f"{subject}_{sheet}"
-                    if key not in table_info:
-                        table_info[key] = {}
-                    
-                    if period == normalise_text(self.dataset_1_period):
-                        table_info[key]['dataset_1'] = table_name
-                    elif period == normalise_text(self.dataset_2_period):
-                        table_info[key]['dataset_2'] = table_name
-                        
+                if len(parts) < 3:
+                    self.logger.warning(f"Table name has insufficient parts: {table_name}")
+                    continue
+                
+                # Known periods (adjust these to match your actual periods)
+                known_periods = [
+                    normalise_text(self.dataset_1_period),  # 'feb'
+                    normalise_text(self.dataset_2_period)   # 'july' 
+                ]
+                
+                # Known sheet types
+                known_sheet_types = ['highly_cited_only', 'incites_researchers']
+                
+                # Find period in the parts
+                period = None
+                period_index = None
+                for i, part in enumerate(parts):
+                    if part in known_periods:
+                        period = part
+                        period_index = i
+                        break
+                
+                if period is None:
+                    self.logger.warning(f"Could not identify period in table name: {table_name}")
+                    continue
+                
+                # Find sheet type (everything after period)
+                sheet_parts = parts[period_index + 1:]
+                sheet_type = '_'.join(sheet_parts)
+                
+                if sheet_type not in known_sheet_types:
+                    self.logger.warning(f"Unknown sheet type '{sheet_type}' in table: {table_name}")
+                    continue
+                
+                # Subject is everything before period
+                subject_parts = parts[:period_index]
+                subject = '_'.join(subject_parts)
+                
+                # Create comparison key (subject + sheet type)
+                comparison_key = f"{subject}_{sheet_type}"
+                
+                if comparison_key not in table_info:
+                    table_info[comparison_key] = {}
+                
+                # Map periods to dataset slots
+                if period == normalise_text(self.dataset_1_period):
+                    table_info[comparison_key]['dataset_1'] = table_name
+                elif period == normalise_text(self.dataset_2_period):
+                    table_info[comparison_key]['dataset_2'] = table_name
+                
+                self.logger.debug(f"Parsed '{table_name}': subject='{subject}', period='{period}', sheet='{sheet_type}'")
+                            
             except Exception as e:
                 self.logger.warning(f"Could not parse table name {table_name}: {e}")
                 continue
@@ -215,12 +247,12 @@ class DataComparator:
                 complete_pairs[key] = tables
                 self.logger.info(f"Found matching pair for {key}: {tables['dataset_1']} vs {tables['dataset_2']}")
             else:
-                missing = []
+                missing_periods = []
                 if 'dataset_1' not in tables:
-                    missing.append(self.dataset_1_period)
+                    missing_periods.append(self.dataset_1_period)
                 if 'dataset_2' not in tables:
-                    missing.append(self.dataset_2_period)
-                self.logger.warning(f"Incomplete pair for {key}: missing {missing}")
+                    missing_periods.append(self.dataset_2_period)
+                self.logger.warning(f"Incomplete pair for {key}: missing {missing_periods}")
         
         self.logger.info(f"Found {len(complete_pairs)} complete table pairs for comparison")
         return complete_pairs
