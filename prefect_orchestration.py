@@ -2,6 +2,8 @@
 Prefect Orchestration Wrapper for Dataset Comparison Pipeline
 Provides workflow management, retry logic, monitoring and scalability
 Compatible with Prefect 3.x
+
+python prefect_orchestration.py --config config/comparison_config.yaml --run
 """
 
 import sys
