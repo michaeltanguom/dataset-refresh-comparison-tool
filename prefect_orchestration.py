@@ -39,9 +39,17 @@ from src.transform.compare_datasets import DataComparator
 # Utilities
 from src.utils.exceptions import (
     ConfigurationError, ExtractionError, NormalisationError, 
-    DatabaseError, DataQualityError, ComparisonError, PipelineError
+    DatabaseError, DataQualityError, ComparisonError, PipelineError, HtmlGenerationError
 )
 from src.utils.logging_config import setup_logging, get_logger
+
+try:
+    # Import the HTML generation flow
+    from src.html_generator.prefect_html_orchestration import html_generation_flow
+    HTML_GENERATION_AVAILABLE = True
+except ImportError as e:
+    print(f"HTML generation not available: {e}")
+    HTML_GENERATION_AVAILABLE = False
 
 class PrefectPipelineOrchestrator:
     """
@@ -369,13 +377,127 @@ def compare_datasets_task(config_path: str, cleaning_results: Dict[str, Any]) ->
         logger.error(f"❌ Dataset comparison failed: {e}")
         raise ComparisonError(f"Dataset comparison failed: {e}")
 
-#@task(
+@task(
+    name="generate_enhanced_pipeline_summary",
+    description="Generate comprehensive pipeline execution summary with HTML generation",
+    retries=0
+)
+def generate_enhanced_pipeline_summary(config_path: str, 
+                                     extraction_results: Dict[str, Any],
+                                     normalisation_results: Dict[str, Any],
+                                     loading_results: Dict[str, Any],
+                                     cleaning_results: Dict[str, Any],
+                                     comparison_results: Dict[str, Any],
+                                     json_extraction_results: Optional[Dict[str, Any]] = None,
+                                     html_generation_results: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Generate comprehensive pipeline execution summary including HTML generation
+    """
+    logger = get_run_logger()
+    logger.info("📊 Generating enhanced pipeline execution summary")
+    
+    try:
+        # Calculate total duration
+        total_duration = (
+            extraction_results['performance_metrics'].get('extraction_duration', 0) +
+            normalisation_results['performance_metrics'].get('normalisation_duration', 0) +
+            loading_results['performance_metrics'].get('loading_duration', 0) +
+            cleaning_results['performance_metrics'].get('cleaning_duration', 0) +
+            comparison_results['performance_metrics'].get('comparison_duration', 0)
+        )
+        
+        # Add JSON extraction duration if present
+        if json_extraction_results:
+            total_duration += json_extraction_results['performance_metrics'].get('json_extraction_duration', 0)
+        
+        # Add HTML generation duration if present
+        if html_generation_results:
+            html_duration = html_generation_results.get('performance_metrics', {}).get('html_task_duration', 0)
+            total_duration += html_duration
+        
+        summary = {
+            'pipeline_status': 'SUCCESS',
+            'execution_timestamp': datetime.now().isoformat(),
+            'config_file': config_path,
+            'total_execution_time_seconds': total_duration,
+            'step_performance': {
+                'extraction': extraction_results['performance_metrics'].get('extraction_duration', 0),
+                'normalisation': normalisation_results['performance_metrics'].get('normalisation_duration', 0),
+                'loading': loading_results['performance_metrics'].get('loading_duration', 0),
+                'cleaning': cleaning_results['performance_metrics'].get('cleaning_duration', 0),
+                'comparison': comparison_results['performance_metrics'].get('comparison_duration', 0)
+            },
+            'data_statistics': {
+                'total_datasets_extracted': extraction_results['extracted_datasets'],
+                'total_rows_extracted': extraction_results['total_rows'],
+                'tables_loaded': loading_results['tables_count'],
+                'tables_cleaned': cleaning_results['tables_count'],
+                'successful_comparisons': comparison_results['successful_comparisons'],
+                'failed_comparisons': comparison_results['failed_comparisons'],
+                'comparison_reports_generated': len(comparison_results.get('saved_report_files', {}))
+            },
+            'step_completion': {
+                'extraction': True,
+                'normalisation': True,
+                'loading': True,
+                'cleaning': True,
+                'comparison': True,
+                'json_extraction': json_extraction_results is not None,
+                'html_generation': html_generation_results is not None  # NEW
+            }
+        }
+        
+        # Add JSON extraction statistics if present
+        if json_extraction_results:
+            summary['step_performance']['json_extraction'] = json_extraction_results['performance_metrics'].get('json_extraction_duration', 0)
+            summary['data_statistics']['json_reports_extracted'] = json_extraction_results['extracted_reports']
+            summary['data_statistics']['total_researcher_records'] = json_extraction_results['total_researcher_records']
+        
+        # Add HTML generation statistics if present
+        if html_generation_results:
+            summary['step_performance']['html_generation'] = html_generation_results.get('performance_metrics', {}).get('html_task_duration', 0)
+            
+            if html_generation_results.get('pipeline_status') == 'SUCCESS':
+                summary['data_statistics']['html_dashboards_generated'] = html_generation_results.get('dashboards_generated', 0)
+                summary['data_statistics']['html_failed_generations'] = html_generation_results.get('failed_generations', 0)
+                
+                # Add output summary
+                output_summary = html_generation_results.get('output_summary', {})
+                if output_summary:
+                    summary['html_output'] = {
+                        'files_generated': output_summary.get('files_generated', 0),
+                        'total_size_mb': output_summary.get('total_size_mb', 0),
+                        'output_directory': output_summary.get('output_directory', 'Unknown')
+                    }
+            else:
+                summary['data_statistics']['html_dashboards_generated'] = 0
+                summary['html_generation_error'] = html_generation_results.get('error', 'Unknown error')
+        
+        logger.info("✅ Enhanced pipeline execution summary generated")
+        logger.info(f"📈 Total execution time: {total_duration:.2f} seconds")
+        
+        if html_generation_results:
+            html_status = html_generation_results.get('pipeline_status', 'Unknown')
+            dashboards_generated = summary['data_statistics'].get('html_dashboards_generated', 0)
+            logger.info(f"🎨 HTML Generation: {html_status} - {dashboards_generated} dashboards")
+        
+        return summary
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to generate enhanced pipeline summary: {e}")
+        return {
+            'pipeline_status': 'PARTIAL_SUCCESS',
+            'error': str(e),
+            'execution_timestamp': datetime.now().isoformat()
+        }
+
+@task(
     name="extract_comparison_reports",
     description="Extract JSON comparison reports for HTML generation",
     retries=1,
     retry_delay_seconds=15
-#)
-#def extract_comparison_reports_task(config_path: str, comparison_results: Dict[str, Any]) -> Dict[str, Any]:
+)
+def extract_comparison_reports_task(config_path: str, comparison_results: Dict[str, Any]) -> Dict[str, Any]:
     """Extract JSON comparison reports with proper timing"""
     logger = get_run_logger()
     logger.info("🔄 Starting JSON comparison report extraction")
@@ -418,90 +540,99 @@ def compare_datasets_task(config_path: str, cleaning_results: Dict[str, Any]) ->
         raise ExtractionError(f"JSON extraction failed: {e}")
 
 @task(
-    name="generate_pipeline_summary",
-    description="Generate comprehensive pipeline execution summary",
-    retries=0
+    name="generate_html_dashboards_integrated",
+    description="Generate HTML dashboards using dedicated HTML generation flow",
+    retries=1,
+    retry_delay_seconds=30
 )
-def generate_pipeline_summary(config_path: str, 
-                            extraction_results: Dict[str, Any],
-                            normalisation_results: Dict[str, Any],
-                            loading_results: Dict[str, Any],
-                            cleaning_results: Dict[str, Any],
-                            comparison_results: Dict[str, Any],
-                            json_extraction_results: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def generate_html_dashboards_integrated_task(config_path: str, comparison_results: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Generate comprehensive pipeline execution summary
-    USING YOUR ORIGINAL WORKING TIMING METHOD
+    Generate HTML dashboards by calling the dedicated HTML generation flow
+    
+    Args:
+        config_path: Path to configuration file
+        comparison_results: Results from comparison task
+        
+    Returns:
+        HTML generation results
     """
     logger = get_run_logger()
-    logger.info("📊 Generating pipeline execution summary")
+    logger.info("🎨 Starting integrated HTML dashboard generation")
+    
+    # Check if HTML generation is available
+    if not HTML_GENERATION_AVAILABLE:
+        logger.warning("HTML generation module not available - skipping")
+        return {
+            'status': 'skipped',
+            'reason': 'HTML generation module not available',
+            'generated_dashboards': 0,
+            'performance_metrics': {'html_generation_duration': 0}
+        }
+    
+    task_start_time = time.time()
     
     try:
-        # 🔧 Sum the individual step durations
-        total_duration = (
-            extraction_results['performance_metrics'].get('extraction_duration', 0) +
-            normalisation_results['performance_metrics'].get('normalisation_duration', 0) +
-            loading_results['performance_metrics'].get('loading_duration', 0) +
-            cleaning_results['performance_metrics'].get('cleaning_duration', 0) +
-            comparison_results['performance_metrics'].get('comparison_duration', 0)
-        )
+        # Check if HTML generation is enabled in config
+        config = ConfigManager(config_path)
+        html_config = config.get_html_generation_config()
         
-        # Add JSON extraction duration if present
-        if json_extraction_results:
-            total_duration += json_extraction_results['performance_metrics'].get('json_extraction_duration', 0)
-        
-        summary = {
-            'pipeline_status': 'SUCCESS',
-            'execution_timestamp': datetime.now().isoformat(),
-            'config_file': config_path,
-            'total_execution_time_seconds': total_duration,  # 🔧 YOUR ORIGINAL FIELD NAME
-            'step_performance': {
-                'extraction': extraction_results['performance_metrics'].get('extraction_duration', 0),
-                'normalisation': normalisation_results['performance_metrics'].get('normalisation_duration', 0),
-                'loading': loading_results['performance_metrics'].get('loading_duration', 0),
-                'cleaning': cleaning_results['performance_metrics'].get('cleaning_duration', 0),
-                'comparison': comparison_results['performance_metrics'].get('comparison_duration', 0)
-            },
-            'data_statistics': {
-                'total_datasets_extracted': extraction_results['extracted_datasets'],
-                'total_rows_extracted': extraction_results['total_rows'],
-                'tables_loaded': loading_results['tables_count'],
-                'tables_cleaned': cleaning_results['tables_count'],
-                'successful_comparisons': comparison_results['successful_comparisons'],
-                'failed_comparisons': comparison_results['failed_comparisons']
-            },
-            'step_completion': {
-                'extraction': True,
-                'normalisation': True,
-                'loading': True,
-                'cleaning': True,
-                'comparison': True,
-                'json_extraction': json_extraction_results is not None
+        if not html_config.get('enabled', False):
+            logger.info("HTML generation is disabled in configuration - skipping")
+            return {
+                'status': 'disabled',
+                'reason': 'HTML generation disabled in config',
+                'generated_dashboards': 0,
+                'performance_metrics': {'html_generation_duration': 0}
             }
-        }
         
-        # Add JSON extraction statistics if present
-        if json_extraction_results:
-            summary['step_performance']['json_extraction'] = json_extraction_results['performance_metrics'].get('json_extraction_duration', 0)
-            summary['data_statistics']['json_reports_extracted'] = json_extraction_results['extracted_reports']
-            summary['data_statistics']['total_researcher_records'] = json_extraction_results['total_researcher_records']
+        # Ensure comparison reports were generated successfully
+        if comparison_results.get('successful_comparisons', 0) == 0:
+            logger.warning("No successful comparisons found - skipping HTML generation")
+            return {
+                'status': 'skipped',
+                'reason': 'No successful comparisons to process',
+                'generated_dashboards': 0,
+                'performance_metrics': {'html_generation_duration': 0}
+            }
         
-        logger.info("✅ Pipeline execution summary generated")
-        logger.info(f"📈 Total execution time: {total_duration:.2f} seconds")
-        logger.info(f"📊 Datasets processed: {summary['data_statistics']['total_datasets_extracted']}")
-        logger.info(f"🔄 Comparisons completed: {summary['data_statistics']['successful_comparisons']}")
+        logger.info(f"Running HTML generation flow for {comparison_results['successful_comparisons']} comparison reports")
         
-        if json_extraction_results:
-            logger.info(f"📄 JSON reports extracted: {summary['data_statistics']['json_reports_extracted']}")
+        # Call the dedicated HTML generation flow
+        html_results = html_generation_flow(config_path)
         
-        return summary
+        # Calculate task-level timing
+        task_duration = time.time() - task_start_time
+        
+        # Enhance results with task timing
+        if 'performance_metrics' not in html_results:
+            html_results['performance_metrics'] = {}
+        html_results['performance_metrics']['html_task_duration'] = task_duration
+        
+        # Log results
+        if html_results.get('pipeline_status') == 'SUCCESS':
+            dashboards_generated = html_results.get('dashboards_generated', 0)
+            failed_generations = html_results.get('failed_generations', 0)
+            
+            logger.info(f"✅ HTML generation completed: {dashboards_generated} dashboards generated, {failed_generations} failed")
+            logger.info(f"📁 Output directory: {html_results.get('output_summary', {}).get('output_directory', 'Unknown')}")
+            
+            if html_results.get('output_summary', {}).get('files_generated', 0) > 0:
+                total_size = html_results['output_summary'].get('total_size_mb', 0)
+                logger.info(f"📊 Total size: {total_size:.2f} MB")
+        else:
+            logger.error(f"❌ HTML generation failed: {html_results.get('error', 'Unknown error')}")
+        
+        return html_results
         
     except Exception as e:
-        logger.error(f"❌ Failed to generate pipeline summary: {e}")
+        task_duration = time.time() - task_start_time
+        logger.error(f"❌ HTML generation task failed: {e}")
+        
         return {
-            'pipeline_status': 'PARTIAL_SUCCESS',
+            'status': 'failed',
             'error': str(e),
-            'execution_timestamp': datetime.now().isoformat()
+            'generated_dashboards': 0,
+            'performance_metrics': {'html_generation_duration': task_duration}
         }
 
 # ====================================================
@@ -509,61 +640,66 @@ def generate_pipeline_summary(config_path: str,
 # ====================================================
 
 @flow(
-    name="dataset-comparison-pipeline-refactored",
-    description="Complete EtLT pipeline using refactored extraction modules",
-    version="2.0.0",
-    timeout_seconds=3600,
+    name="dataset-comparison-pipeline-with-html",
+    description="Complete EtLT pipeline with optional HTML dashboard generation",
+    version="2.1.0",  # Increment version
+    timeout_seconds=7200,  # Increase timeout for HTML generation
     log_prints=True
 )
-def dataset_comparison_flow(config_path: str, include_json_extraction: bool = False) -> Dict[str, Any]:
+def dataset_comparison_flow(config_path: str, 
+                          include_json_extraction: bool = False,
+                          generate_html: bool = False) -> Dict[str, Any]:
     """
-    Main Prefect flow using YOUR ORIGINAL TIMING APPROACH
+    Main Prefect flow with optional HTML generation
+    
+    Args:
+        config_path: Path to configuration file
+        include_json_extraction: Whether to include JSON extraction (legacy option)
+        generate_html: Whether to generate HTML dashboards
     """
     logger = get_run_logger()
-    logger.info("🚀 Starting Dataset Comparison Pipeline (Refactored)")
+    logger.info("🚀 Starting Dataset Comparison Pipeline with HTML Generation")
     logger.info(f"📁 Configuration: {config_path}")
+    logger.info(f"🎨 HTML Generation: {'Enabled' if generate_html else 'Disabled'}")
     
     try:
-        # Step 1: Validate Configuration
+        # Original pipeline steps (unchanged)
         validation_results = validate_pipeline_configuration(config_path)
-        
-        # Step 2: Extract Data (using new ExcelDataExtractor)
         extraction_results = extract_datasets_task(config_path)
-        
-        # Step 3: Normalise Data (using DataNormaliser directly)
         normalisation_results = normalise_datasets_task(config_path, extraction_results)
-        
-        # Step 4: Load to Database (using DataLoader directly)
         loading_results = load_to_database_task(config_path, normalisation_results)
-        
-        # Step 5: Clean Data (using DataCleaner directly)
         cleaning_results = clean_data_task(config_path, loading_results)
-        
-        # Step 6: Compare Datasets (using DataComparator directly)
         comparison_results = compare_datasets_task(config_path, cleaning_results)
         
-        # Step 7: Extract JSON Reports (NEW - conditional)
-        #json_extraction_results = None
-        #if include_json_extraction:
-            #logger.info("🔄 Including JSON extraction for HTML generation")
-            #json_extraction_results = extract_comparison_reports_task(config_path, comparison_results)
+        # Legacy JSON extraction (conditional)
+        json_extraction_results = None
+        if include_json_extraction:
+            logger.info("🔄 Including legacy JSON extraction")
+            json_extraction_results = extract_comparison_reports_task(config_path, comparison_results)
         
-        # Step 8: Generate Summary (using YOUR ORIGINAL @task approach)
-        pipeline_summary = generate_pipeline_summary(
+        # NEW: HTML Dashboard Generation (conditional)
+        html_generation_results = None
+        if generate_html:
+            logger.info("🎨 Including HTML dashboard generation")
+            html_generation_results = generate_html_dashboards_integrated_task(config_path, comparison_results)
+        
+        # Enhanced summary generation
+        pipeline_summary = generate_enhanced_pipeline_summary(
             config_path,
             extraction_results,
             normalisation_results,
             loading_results,
             cleaning_results,
             comparison_results,
-            #json_extraction_results  # NEW parameter
+            json_extraction_results,
+            html_generation_results  # NEW parameter
         )
         
-        logger.info("🎉 Pipeline completed successfully!")
+        logger.info("🎉 Complete pipeline finished successfully!")
         return pipeline_summary
         
     except Exception as e:
-        logger.error(f"💥 Pipeline failed with error: {e}")
+        logger.error(f"💥 Pipeline failed: {e}")
         logger.error(f"📋 Traceback: {traceback.format_exc()}")
         
         return {
@@ -683,28 +819,32 @@ def serve_flows():
 # ====================================================
 
 def main():
-    """Main execution function with enhanced options for refactored architecture"""
+    """Main execution function with HTML generation options"""
     parser = argparse.ArgumentParser(
-        description="Prefect Orchestration for Dataset Comparison Pipeline (Refactored)",
+        description="Prefect Orchestration for Dataset Comparison Pipeline with HTML Generation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run full pipeline with refactored modules
+  # Run full pipeline without HTML generation
   python prefect_orchestration.py --config config/comparison_config.yaml --run
 
-  # Run with JSON extraction for HTML generation
-  python prefect_orchestration.py --config config/comparison_config.yaml --run --include-json
+  # Run full pipeline with HTML dashboard generation
+  python prefect_orchestration.py --config config/comparison_config.yaml --run --generate-html
 
-  # Validate configuration only
-  python prefect_orchestration.py --config config/comparison_config.yaml --validate-only
+  # Run with both JSON extraction and HTML generation
+  python prefect_orchestration.py --config config/comparison_config.yaml --run --include-json --generate-html
+
+  # HTML generation only (requires existing comparison reports)
+  python html_generation_orchestration.py --config config/comparison_config.yaml --run
         """
     )
     
     parser.add_argument("--config", help="Path to YAML configuration file")
     parser.add_argument("--run", action="store_true", help="Run the full pipeline immediately")
-    parser.add_argument("--include-json", action="store_true", help="Include JSON extraction for HTML generation")
+    parser.add_argument("--include-json", action="store_true", help="Include JSON extraction (legacy)")
+    parser.add_argument("--generate-html", action="store_true", help="Generate HTML dashboards")
     parser.add_argument("--validate-only", action="store_true", help="Only validate configuration")
-    parser.add_argument("--serve", action="store_true", help="Serve flows for development and testing")
+    parser.add_argument("--serve", action="store_true", help="Serve flows for development")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
     
     args = parser.parse_args()
@@ -725,34 +865,47 @@ Examples:
             print("🔍 Running configuration validation...")
             result = validation_only_flow(args.config)
             print("✅ Configuration validation completed!")
-            print(f"📊 Result: {result}")
             return 0
             
         elif args.run:
-            print("🚀 Running full pipeline with refactored modules...")
-            result = dataset_comparison_flow(args.config, include_json_extraction=args.include_json)
+            print("🚀 Running full pipeline...")
+            if args.generate_html:
+                print("🎨 HTML dashboard generation enabled")
             
-            print("\n" + "=" * 60)
+            # Run with new parameters
+            result = dataset_comparison_flow(
+                args.config, 
+                include_json_extraction=args.include_json,
+                generate_html=args.generate_html
+            )
+            
+            print("\n" + "=" * 70)
             print("📊 PIPELINE EXECUTION SUMMARY")
-            print("=" * 60)
+            print("=" * 70)
             print(f"Status: {result.get('pipeline_status', 'UNKNOWN')}")
             
             if result.get('pipeline_status') == 'SUCCESS':
-                # 🔧 USE YOUR ORIGINAL FIELD NAME
                 print(f"✅ Total Duration: {result.get('total_execution_time_seconds', 0):.2f} seconds")
                 print(f"📈 Datasets Processed: {result.get('data_statistics', {}).get('total_datasets_extracted', 0)}")
                 print(f"🔄 Comparisons Completed: {result.get('data_statistics', {}).get('successful_comparisons', 0)}")
                 
+                # Show HTML generation results
+                if result.get('step_completion', {}).get('html_generation', False):
+                    html_dashboards = result.get('data_statistics', {}).get('html_dashboards_generated', 0)
+                    html_size = result.get('html_output', {}).get('total_size_mb', 0)
+                    html_dir = result.get('html_output', {}).get('output_directory', 'Unknown')
+                    
+                    print(f"🎨 HTML Dashboards Generated: {html_dashboards}")
+                    print(f"📁 HTML Output Directory: {html_dir}")
+                    print(f"📊 Total HTML Size: {html_size:.2f} MB")
+                
                 print("\n📊 Step Performance:")
                 step_perf = result.get('step_performance', {})
                 for step, duration in step_perf.items():
-                    if isinstance(duration, (int, float)):  # Skip nested dicts
+                    if isinstance(duration, (int, float)):
                         print(f"  {step.title()}: {duration:.2f}s")
                 
-                if result.get('step_completion', {}).get('json_extraction', False):
-                    print(f"  JSON Reports Extracted: {result.get('data_statistics', {}).get('json_reports_extracted', 0)}")
-                
-                print("=" * 60)
+                print("=" * 70)
                 return 0
             else:
                 print(f"❌ Pipeline failed: {result.get('error', 'Unknown error')}")

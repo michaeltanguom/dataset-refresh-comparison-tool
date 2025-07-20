@@ -68,3 +68,11 @@ class PipelineError(DatasetComparisonError):
         super().__init__(message)
         self.step = step
         self.original_error = original_error
+
+
+class HtmlGenerationError(DatasetComparisonError):
+    """Raised when HTML generation fails"""
+    def __init__(self, message: str, template_name: str = None, dataset_key: str = None):
+        super().__init__(message)
+        self.template_name = template_name
+        self.dataset_key = dataset_key

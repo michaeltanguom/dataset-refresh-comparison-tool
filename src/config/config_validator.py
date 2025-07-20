@@ -63,6 +63,7 @@ class ConfigValidator:
         self._validate_data_cleaning_configuration()
         self._validate_comparison_configuration()
         self._validate_cross_dependencies()
+        self._validate_html_generation_configuration()
         
         # Summarise results
         total_checks = len(self.validation_results['passed']) + len(self.validation_results['warnings']) + len(self.validation_results['errors'])
@@ -477,7 +478,48 @@ class ConfigValidator:
             
         except Exception as e:
             self._add_result('errors', check_name, f"Error validating cross-dependencies: {e}")
-    
+
+    def _validate_html_generation_configuration(self) -> None:
+        """Validate HTML generation configuration"""
+        check_name = "html_generation_configuration"
+        
+        try:
+            html_config = self.config.get_html_generation_config()
+            
+            if not html_config.get('enabled', False):
+                self._add_result('passed', check_name, "HTML generation is disabled")
+                return
+            
+            # Check HTML config file exists
+            html_config_path = html_config.get('config_path', 'config/html_generator_config.yaml')
+            
+            if not Path(html_config_path).exists():
+                self._add_result('errors', check_name, f"HTML config file not found: {html_config_path}")
+                return
+            
+            # Load and validate HTML config
+            try:
+                html_config_data = self.config.load_html_config(html_config_path)
+                
+                # Validate required sections
+                required_sections = ['html_generation', 'templates', 'output']
+                missing_sections = []
+                
+                for section in required_sections:
+                    if section not in html_config_data:
+                        missing_sections.append(section)
+                
+                if missing_sections:
+                    self._add_result('errors', check_name, f"HTML config missing sections: {missing_sections}")
+                else:
+                    self._add_result('passed', check_name, "HTML configuration is valid")
+                
+            except Exception as e:
+                self._add_result('errors', check_name, f"Invalid HTML configuration: {e}")
+                
+        except Exception as e:
+            self._add_result('errors', check_name, f"Error validating HTML configuration: {e}")
+        
     def get_recommendations(self) -> List[str]:
         """
         Get recommendations for improving configuration

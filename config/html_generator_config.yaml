@@ -1,0 +1,60 @@
+html_generation:
+  input_source: "comparison_reports"
+  output_directory: "html_reports"
+  
+  # Template selection based on dataset type
+  template_mapping:
+    highly_cited_only: "research_dashboard"
+    incites_researchers: "research_dashboard"
+    custom_analysis: "comparison_summary"
+  
+  # Default template if no mapping found
+  default_template: "research_dashboard"
+  
+  # Data source configuration for JSON extraction
+  data_source:
+    folder: "comparison_reports"
+    period_name: "current"
+    source_type: "json"
+    extractor_config:
+      file_pattern: "*_comparison_report.json"
+      subdirectory_search: true
+      validation_rules:
+        required_fields: ["comparison_id", "summary_statistics", "researcher_changes"]
+        min_file_size_bytes: 100
+
+templates:
+  research_dashboard:
+    class: "ResearchDashboardTemplate"
+    config:
+      title_format: "{dataset_type} - Research Performance Reports"
+      show_cross_field_analysis: true
+      max_researchers_summary: 10
+      enable_filtering: true
+      enable_sorting: true
+      colour_scheme: "blue_gradient"
+      
+  comparison_summary:
+    class: "ComparisonSummaryTemplate"
+    config:
+      title_format: "Dataset Comparison Summary - {dataset_type}"
+      show_detailed_breakdown: false
+      summary_only: true
+      colour_scheme: "green_gradient"
+
+styling:
+  default_theme: "modern_blue"
+  custom_css_path: null
+  enable_dark_mode: false
+  responsive_design: true
+  
+output:
+  file_naming: "{dataset_type}_{template_name}_dashboard.html"
+  include_timestamp: true
+  compress_output: false
+  
+features:
+  enable_export: true
+  enable_print_view: true
+  enable_responsive_design: true
+  analytics_tracking: false
