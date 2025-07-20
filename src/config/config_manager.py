@@ -338,3 +338,65 @@ class ConfigManager:
             'schema_folder': self.get_schema_config()['schema_folder'],
             'default_schema': self.get_schema_config()['default_schema']
         }
+    
+    def get_html_generation_config(self) -> Dict[str, Any]:
+        """Get HTML generation configuration"""
+        return self.config.get('html_generation', {
+            'enabled': False,
+            'config_path': 'config/html_generator_config.yaml',
+            'auto_generate': False
+        })
+
+    def load_html_config(self, html_config_path: str) -> Dict[str, Any]:
+        """
+        Load HTML generator specific configuration
+        
+        Args:
+            html_config_path: Path to HTML config file
+            
+        Returns:
+            HTML configuration dictionary
+        """
+        try:
+            html_config_file = Path(html_config_path)
+            
+            if not html_config_file.exists():
+                return self._get_default_html_config()
+            
+            with open(html_config_file, 'r', encoding='utf-8') as f:
+                html_config = yaml.safe_load(f)
+            
+            return html_config
+            
+        except Exception as e:
+            return self._get_default_html_config()
+
+    def _get_default_html_config(self) -> Dict[str, Any]:
+        """Get default HTML configuration if file not found"""
+        return {
+            'html_generation': {
+                'input_source': 'comparison_reports',
+                'output_directory': 'html_reports',
+                'template_mapping': {
+                    'highly_cited_only': 'research_dashboard',
+                    'incites_researchers': 'research_dashboard'
+                },
+                'default_template': 'research_dashboard'
+            },
+            'templates': {
+                'research_dashboard': {
+                    'class': 'ResearchDashboardTemplate',
+                    'config': {
+                        'title_format': '{dataset_type} - Research Performance Reports',
+                        'colour_scheme': 'blue_gradient'
+                    }
+                }
+            },
+            'styling': {
+                'default_theme': 'modern_blue'
+            },
+            'output': {
+                'file_naming': '{dataset_type}_{template_name}_dashboard.html',
+                'include_timestamp': True
+            }
+        }

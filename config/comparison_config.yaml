@@ -136,6 +136,12 @@ comparison:
   # Include unchanged researchers in output
   include_unchanged: true
     
+# HTML Generator system    
+html_generation:
+  enabled: true
+  config_path: "html_generator_config.yaml"  # Relative to config directory
+  auto_generate: true
+
 # Logging configuration
 logging:
   level: "INFO"           # DEBUG, INFO, WARNING, ERROR
