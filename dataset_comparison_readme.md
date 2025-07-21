@@ -2,22 +2,22 @@
 
 A robust Python-based EtLT (Extract, transform, Load, Transform) pipeline for comparing research datasets across different time periods, with automated report generation and interactive HTML dashboards.
 
-## Overview
+## 🎯 Overview
 
-This tool is designed to analyse changes in research performance data between different time periods (e.g., February 2025 vs July 2025). It processes Excel files containing researcher data, performs comprehensive comparisons, and generates detailed reports with interactive visualisations.
+This tool is designed to analyze changes in research performance data between different time periods (e.g., February 2025 vs July 2025). It processes Excel files containing researcher data, performs comprehensive comparisons, and generates detailed reports with interactive visualizations.
 
 ### Key Features
 
-- **Multi-format Data Processing**: Extract from Excel files with multiple sheets
-- **Automated Data Comparison**: Compare researcher metrics across time periods
-- **Interactive HTML Dashboards**: Generate responsive web-based reports
-- **Modular Architecture**: Composition-based design for maximum flexibility
-- **Prefect Orchestration**: Proper task and workflow management
-- **ESI Field Normalisation**: Standardisation of research field names
-- **DuckDB Integration**: High-performance analytical database powering transformation logic
-- **Comprehensive Metrics**: Track changes in citations, papers, and cross-field scores
+- **📊 Multi-format Data Processing**: Extract from Excel files with multiple sheets
+- **🔄 Automated Data Comparison**: Compare researcher metrics across time periods
+- **🎨 Interactive HTML Dashboards**: Generate responsive web-based reports
+- **🏗️ Modular Architecture**: Composition-based design for maximum flexibility
+- **⚡ Prefect Orchestration**: Enterprise-grade workflow management
+- **🔍 ESI Field Normalization**: Intelligent standardization of research field names
+- **💾 DuckDB Integration**: High-performance analytical database
+- **📈 Comprehensive Metrics**: Track changes in citations, papers, and cross-field scores
 
-## Architecture
+## 🏛️ Architecture
 
 The system follows modern software engineering principles with a clear separation of concerns:
 
@@ -39,7 +39,7 @@ src/
 - **Observer Pattern**: Pipeline monitoring and alerting
 - **Template Method**: Consistent ETL workflows
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
@@ -70,10 +70,13 @@ src/
    python prefect_orchestration.py --config config/comparison_config.yaml --run --generate-html
    ```
 
-## Detailed Usage
+## 📋 Detailed Usage
 
 ### Pipeline Orchestration
-#### The tool is orchestrated with Prefect:
+
+The tool supports multiple execution modes:
+
+#### 1. Full Pipeline with Prefect
 ```bash
 # Complete pipeline with monitoring
 python prefect_orchestration.py --config config/comparison_config.yaml --run
@@ -85,7 +88,16 @@ python prefect_orchestration.py --config config/comparison_config.yaml --run --g
 python prefect_orchestration.py --config config/comparison_config.yaml --run --include-json --generate-html
 ```
 
-#### Development Mode
+#### 2. Direct Pipeline Execution
+```bash
+# Without Prefect orchestration
+python src/pipeline_orchestrator.py --config config/comparison_config.yaml
+
+# Configuration validation only
+python src/pipeline_orchestrator.py --config config/comparison_config.yaml --validate-only
+```
+
+#### 3. Development Mode
 ```bash
 # Start Prefect server for development
 python prefect_orchestration.py --serve
@@ -172,7 +184,7 @@ templates:
 - **Interactive Features**: Sorting, filtering, and search
 - **Responsive Design**: Mobile-friendly dashboards
 
-## Output Reports
+## 📊 Output Reports
 
 The tool generates several types of outputs:
 
@@ -191,8 +203,8 @@ comparison_reports/
 ### 2. Interactive HTML Dashboards
 ```
 html_reports/
-├── highly_cited_only_25_subjects_research_dashboard_dashboard_20250121_143022.html
-├── incites_researchers_25_subjects_research_dashboard_dashboard_20250121_143045.html
+├── unified_highly_cited_only_25_subjects_research_dashboard_dashboard_20250121_143022.html
+├── unified_incites_researchers_18_subjects_research_dashboard_dashboard_20250121_143045.html
 └── ...
 ```
 
@@ -202,11 +214,11 @@ html_reports/
 - Change rates and significant variations
 - Cross-field researcher analysis
 
-## Advanced Features
+## 🛠️ Advanced Features
 
 ### ESI Field Normalization
 
-The system automatically standardises research field names to canonical formats:
+The system automatically standardizes research field names to canonical formats:
 
 ```python
 # Automatic normalization
@@ -231,13 +243,13 @@ Built-in performance tracking and metrics:
 ```python
 # Automatic performance logging
 ⏱️  Extraction: 2.3s (1,234 records)
-⏱️  Normalisation: 1.1s (ESI fields: 89 normalised)
+⏱️  Normalization: 1.1s (ESI fields: 89 normalized)
 ⏱️  Loading: 0.8s (2 tables created)
 ⏱️  Cleaning: 1.5s (validation passed)
 ⏱️  Comparison: 3.2s (5 comparisons completed)
 ```
 
-## Database Schema
+## 🔍 Database Schema
 
 The tool uses DuckDB with configurable schemas defined in SQL files:
 
@@ -254,7 +266,7 @@ CREATE TABLE IF NOT EXISTS "{table_name}" (
 );
 ```
 
-## Testing and Validation
+## 🧪 Testing and Validation
 
 ### Configuration Validation
 ```bash
@@ -273,7 +285,7 @@ python prefect_orchestration.py --config config/comparison_config.yaml --validat
 - Data type validation
 - Range checking for numeric fields
 
-## Folder Structure
+## 📁 File Structure
 
 ```
 dataset-refresh-comparison-tool/
@@ -307,7 +319,7 @@ dataset-refresh-comparison-tool/
 └── README.md
 ```
 
-## Configuration Options
+## 🎛️ Configuration Options
 
 ### Data Sources
 - **Multiple Formats**: Excel, JSON (extensible to CSV, databases)
@@ -317,14 +329,14 @@ dataset-refresh-comparison-tool/
 ### Processing Options
 - **Sheet Selection**: Choose which Excel sheets to process
 - **Cleaning Strategies**: Handle nulls, duplicates, outliers
-- **Validation Rules**: Customisable data quality checks
+- **Validation Rules**: Customizable data quality checks
 
 ### Output Customization
 - **Report Formats**: JSON, HTML dashboards
 - **Template Selection**: Multiple dashboard templates
 - **Styling Options**: Configurable themes and layouts
 
-## Error Handling
+## 🚨 Error Handling
 
 The system includes comprehensive error handling:
 
@@ -335,14 +347,20 @@ The system includes comprehensive error handling:
 
 All errors are logged with detailed context and suggested resolutions.
 
-## 📈 Design Considerations
+## 📈 Performance Considerations
+
+### Optimization Features
+- **Efficient Database Operations**: DuckDB for analytical workloads
+- **Memory Management**: Streaming processing for large datasets
+- **Parallel Processing**: Multi-threaded operations where applicable
+- **Caching**: Smart caching of intermediate results
 
 ### Scalability
 - **Modular Design**: Easy to extend with new data sources
-- **Configuration-Driven**: No code changes for new analyses utilising the default schema
+- **Configuration-Driven**: No code changes for new datasets
 - **Resource Monitoring**: Built-in performance metrics
 
-## Extension
+## 🤝 Contributing
 
 This tool is built with extensibility in mind:
 
@@ -360,3 +378,13 @@ This tool is built with extensibility in mind:
 1. Extend `BaseTemplate` class
 2. Implement template-specific logic
 3. Register with template factory
+
+## 📜 License
+
+This project is designed for institutional research data analysis and follows best practices for data privacy and security.
+
+---
+
+**Built with ❤️ for research data analysis**
+
+*This tool demonstrates modern Python data engineering patterns including composition over inheritance, factory patterns, and enterprise-grade workflow orchestration.*
