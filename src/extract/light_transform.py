@@ -1,10 +1,10 @@
 """
-Extract and Light Transform for Dataset Comparison Pipeline
-Handles data extraction from various sources and normalisation of column names
+Light Transform Module
+Handles data normalisation including column mapping and ESI field standardisation
+Location: src/extract/light_transform.py
 """
 
 import pandas as pd
-from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
@@ -12,80 +12,85 @@ from datetime import datetime
 import time
 
 from ..config.config_manager import ConfigManager
-from ..utils.exceptions import ExtractionError, NormalisationError, ValidationError
+from ..utils.exceptions import NormalisationError, ValidationError
 from ..utils.logging_config import get_logger
 from ..utils.common import (
     normalise_text, 
-    generate_timestamp, 
-    clean_dataframe_columns, 
-    get_sample_values,
-    log_dataframe_info
+    get_sample_values
 )
 
-logger = get_logger('extract')
+logger = get_logger('light_transform')
 
 
 @dataclass
-class DatasetMetadata:
-    """Metadata about a processed dataset"""
-    source_file: str
-    subject: str
-    period: str
-    sheet_name: str
-    normalised_sheet_name: str
-    table_name: str
-    row_count: int
+class TransformationMetadata:
+    """Metadata about transformation applied to a dataset"""
     columns_mapped: Dict[str, str]
-    processing_timestamp: str
-    extraction_duration_seconds: float
     normalisation_duration_seconds: float = 0.0
+    esi_fields_normalised: int = 0
+    transformation_timestamp: str = ""
 
 
-class DataExtractor(ABC):
+class ESIFieldNormaliser:
     """
-    Abstract base class for data extraction
-    Enables extension to different file formats (Excel, JSON, CSV, etc.)
-    Single responsibility: Extract raw data from files
+    ESI Field Normaliser - handles standardisation of ESI field names
+    Integrated into DataNormaliser for clean architecture
     """
     
-    def __init__(self, config_manager: ConfigManager):
+    # Canonical ESI field names (your exact list)
+    CANONICAL_ESI_FIELDS = {
+        'agricultural sciences': 'Agricultural Sciences',
+        'biology_biochemistry': 'Biology Biochemistry', 
+        'chemistry': 'Chemistry',
+        'clinical medicine': 'Clinical Medicine',
+        'computer science': 'Computer Science',
+        'economics and business': 'Economics and Business',
+        'engineering': 'Engineering',
+        'environment_ecology': 'Environment Ecology',
+        'geosciences': 'GeoSciences',
+        'immunology': 'Immunology',
+        'materials science': 'Materials Science',
+        'microbiology': 'Microbiology',
+        'molecular biology and genetics': 'Molecular Biology and Genetics',
+        'neuroscience and behaviour': 'Neuroscience and Behaviour',
+        'pharmacology and toxicology': 'Pharmacology and Toxicology',
+        'physics': 'Physics',
+        'plant and animal science': 'Plant and Animal Science',
+        'psychiatry_psychology': 'Psychiatry Psychology',
+        'social sciences': 'Social Sciences',
+        'space science': 'Space Science'
+    }
+    
+    @classmethod
+    def normalise_esi_field(cls, field_name: str) -> str:
         """
-        Initialise with configuration manager
+        Normalise ESI field to canonical format
         
         Args:
-            config_manager: Configuration manager instance
-        """
-        self.config = config_manager
-        self.logger = get_logger(f'extract.{self.__class__.__name__}')
-        
-    @abstractmethod
-    def extract_files(self, folder_path: str, period_name: str) -> Dict[str, Dict[str, Any]]:
-        """
-        Extract files from folder and return DataFrames with metadata
-        
-        Args:
-            folder_path: Path to folder containing files
-            period_name: Period identifier (e.g., 'feb', 'july')
+            field_name: Raw ESI field name
             
         Returns:
-            Dict mapping table names to {'dataframe': df, 'metadata': metadata}
+            Canonical ESI field name
         """
-        pass
-    
-    def generate_table_name(self, subject: str, period_name: str, sheet_name: str) -> str:
-        """Generate standardised table name (without prefix for database tables)"""
-        # Normalise all components
-        norm_subject = normalise_text(subject)
-        norm_period = normalise_text(period_name)
-        norm_sheet = normalise_text(sheet_name)
+        if not field_name:
+            return ""
         
-        # Return clean table name without df_ prefix (matches POC approach)
-        return f"{norm_subject}_{norm_period}_{norm_sheet}"
+        # Clean and normalise input
+        clean_field = field_name.strip().lower()
+        
+        # Direct lookup
+        if clean_field in cls.CANONICAL_ESI_FIELDS:
+            return cls.CANONICAL_ESI_FIELDS[clean_field]
+        
+        # If no exact match, return original with warning
+        logger.warning(f"Unknown ESI field: '{field_name}' - keeping original")
+        return field_name.strip()
+
 
 class DataNormaliser:
     """
-    Light Transform: Normalise column names and validate mappings for schema validation
-    Single responsibility: Column normalisation and validation only
+    Light Transform: Normalise column names, validate mappings, and standardise ESI fields
+    Single responsibility: All data normalisation and transformation
     """
     
     def __init__(self, config_manager: ConfigManager):
@@ -101,6 +106,13 @@ class DataNormaliser:
         self.column_variants = self.config.get_column_mapping_variants()
         self.critical_columns = self.config.get_critical_columns()
         self.validation_rules = self.config.get_validation_rules()
+        
+        # ESI normalisation statistics
+        self.esi_normalisation_stats = {
+            'dataframes_processed': 0,
+            'fields_normalised': 0,
+            'normalisation_errors': 0
+        }
         
         # Create comprehensive column lookup
         self._create_column_lookup()
@@ -129,13 +141,7 @@ class DataNormaliser:
         
     def normalise_datasets(self, extracted_data: Dict[str, Dict]) -> Dict[str, Dict]:
         """
-        Normalise all datasets and validate mappings
-        
-        Args:
-            extracted_data: Dict of {table_name: {'dataframe': df, 'metadata': metadata}}
-            
-        Returns:
-            Dict with normalised DataFrames and updated metadata
+        UPDATED: Normalise datasets with proper order: column mapping THEN ESI normalisation
         """
         normalised_data = {}
         
@@ -152,24 +158,38 @@ class DataNormaliser:
                 self.logger.info(f"Normalising dataset: {table_name}")
                 self.logger.info(f"Original shape: {df.shape}")
                 
-                # Perform normalisation
+                # STEP 1: Column normalisation/mapping (existing logic)
                 normalised_df, mapping_applied = self._normalise_dataframe(df, metadata.sheet_name)
                 
-                # Validate the transformation
+                # STEP 2: ESI field normalisation (AFTER column mapping)
+                normalised_df, esi_fields_normalised = self._normalise_esi_fields_in_dataframe(
+                    normalised_df, table_name
+                )
+                
+                # STEP 3: Validate the transformation
                 self._validate_transformation(df, normalised_df, mapping_applied, metadata.sheet_name)
                 
-                # Update metadata with mapping information and timing
+                # Update metadata with transformation information
                 dataset_duration = time.time() - dataset_start_time
-                metadata.columns_mapped = mapping_applied
-                metadata.normalisation_duration_seconds = dataset_duration
+                
+                # Create transformation metadata
+                transform_metadata = TransformationMetadata(
+                    columns_mapped=mapping_applied,
+                    normalisation_duration_seconds=dataset_duration,
+                    esi_fields_normalised=esi_fields_normalised,
+                    transformation_timestamp=datetime.now().isoformat()
+                )
                 
                 normalised_data[table_name] = {
                     'dataframe': normalised_df,
-                    'metadata': metadata
+                    'metadata': metadata,
+                    'transformation_metadata': transform_metadata
                 }
                 
                 self.logger.info(f"Successfully normalised {table_name} in {dataset_duration:.2f}s")
                 self.logger.info(f"Final shape: {normalised_df.shape}")
+                if esi_fields_normalised > 0:
+                    self.logger.info(f"ESI fields normalised: {esi_fields_normalised}")
                 
             except Exception as e:
                 self.logger.error(f"Failed to normalise {table_name}: {e}")
@@ -178,8 +198,129 @@ class DataNormaliser:
         total_duration = time.time() - start_time
         self.logger.info(f"Normalisation complete for {len(normalised_data)} datasets in {total_duration:.2f}s")
         
+        # Log ESI normalisation summary
+        self.logger.info(f"🔧 ESI Normalisation Summary:")
+        self.logger.info(f"  - DataFrames processed: {self.esi_normalisation_stats['dataframes_processed']}")
+        self.logger.info(f"  - Fields normalised: {self.esi_normalisation_stats['fields_normalised']}")
+        self.logger.info(f"  - Normalisation errors: {self.esi_normalisation_stats['normalisation_errors']}")
+        
         return normalised_data
     
+    def _normalise_esi_fields_in_dataframe(self, df: pd.DataFrame, dataframe_name: str) -> Tuple[pd.DataFrame, int]:
+        """
+        SIMPLIFIED: Normalise ESI field names in already-mapped DataFrame
+        
+        Args:
+            df: DataFrame with already-mapped column names
+            dataframe_name: Name of dataframe for logging purposes
+            
+        Returns:
+            Tuple of (normalised_dataframe, number_of_fields_normalised)
+        """
+        if df.empty:
+            return df, 0
+        
+        self.logger.debug(f"🔧 Checking for ESI fields in already-mapped DataFrame: {dataframe_name}")
+        
+        try:
+            # Create copy to avoid modifying original
+            normalised_df = df.copy()
+            fields_normalised_count = 0
+            
+            # Find ESI field columns (should be exact match after column mapping)
+            esi_columns = self._find_esi_field_columns(normalised_df)
+            
+            if not esi_columns:
+                self.logger.debug(f"No ESI field columns found in {dataframe_name} - skipping ESI normalisation")
+                return normalised_df, 0
+            
+            # Normalise each ESI field column
+            for col in esi_columns:
+                self.logger.debug(f"Processing ESI field column: {col}")
+                
+                # Handle NaN values and convert to string
+                original_values = normalised_df[col].fillna('').astype(str)
+                
+                # Apply normalisation using ESIFieldNormaliser class
+                normalised_values = original_values.apply(
+                    lambda x: ESIFieldNormaliser.normalise_esi_field(x) if x.strip() else x
+                )
+                
+                # Count actual changes
+                changes_mask = (original_values != normalised_values) & (original_values.str.strip() != '')
+                changes_count = changes_mask.sum()
+                fields_normalised_count += changes_count
+                
+                # Log specific changes for debugging (only if there are changes)
+                if changes_count > 0:
+                    changed_records = normalised_df.loc[changes_mask, [col]].copy()
+                    changed_records['original'] = original_values[changes_mask]
+                    changed_records['normalised'] = normalised_values[changes_mask]
+                    
+                    self.logger.debug(f"ESI field changes in {col}:")
+                    for idx, row in changed_records.head(3).iterrows():  # Show first 3 changes
+                        self.logger.debug(f"  '{row['original']}' → '{row['normalised']}'")
+                    
+                    if changes_count > 3:
+                        self.logger.debug(f"  ... and {changes_count - 3} more changes")
+                    
+                    # Update the DataFrame
+                    normalised_df[col] = normalised_values
+                else:
+                    self.logger.debug(f"No changes needed in ESI field column: {col}")
+            
+            # Update statistics
+            self.esi_normalisation_stats['dataframes_processed'] += 1
+            self.esi_normalisation_stats['fields_normalised'] += fields_normalised_count
+            
+            if fields_normalised_count > 0:
+                self.logger.debug(f"✅ Normalised {fields_normalised_count} ESI field values in {dataframe_name}")
+            
+            return normalised_df, fields_normalised_count
+            
+        except Exception as e:
+            self.logger.error(f"❌ ESI normalisation failed for {dataframe_name}: {e}")
+            self.esi_normalisation_stats['normalisation_errors'] += 1
+            return df, 0  # Return original DataFrame if normalisation fails
+    
+    def _find_esi_field_columns(self, df: pd.DataFrame) -> List[str]:
+        """
+        Look for exact standardised column name only
+        This runs AFTER column mapping, so we only need to check the mapped column name
+        """
+        # After column mapping, ESI field should be in one of these exact standard names
+        standard_esi_column_names = [
+            'esi_field',          # Primary standard name (snake_case)
+            'ESI Field',          # Alternative standard name
+        ]
+        
+        found_columns = []
+        
+        for col in df.columns:
+            if col in standard_esi_column_names:
+                found_columns.append(col)
+                self.logger.debug(f"Found mapped ESI field column: {col}")
+        
+        if found_columns:
+            self.logger.debug(f"ESI field columns found: {found_columns}")
+        else:
+            self.logger.debug(f"No ESI field columns found. Available columns: {list(df.columns)}")
+            # Check if there's any column that might be ESI-related for debugging
+            potential_esi = [col for col in df.columns if 'esi' in col.lower() or 'field' in col.lower()]
+            if potential_esi:
+                self.logger.debug(f"Potential ESI-related columns (not exact match): {potential_esi}")
+        
+        return found_columns
+    
+    def get_normalisation_summary(self) -> Dict[str, Any]:
+        """Get summary of all normalisation activity"""
+        return {
+            **self.esi_normalisation_stats,
+            'canonical_esi_fields': list(ESIFieldNormaliser.CANONICAL_ESI_FIELDS.values()),
+            'total_canonical_fields': len(ESIFieldNormaliser.CANONICAL_ESI_FIELDS),
+            'normalisation_timestamp': datetime.now().isoformat()
+        }
+
     def _normalise_dataframe(self, df: pd.DataFrame, sheet_name: str) -> Tuple[pd.DataFrame, Dict[str, str]]:
         """
         Normalise a single DataFrame's column names
@@ -363,7 +504,7 @@ class DataNormaliser:
                     if rule.min_value is not None and numeric_value < rule.min_value:
                         errors.append(
                             f"Column '{column}' in '{sheet_name}': "
-                            f"value {numeric_value} below minimum {rule.min_value} (THIS WOULD CATCH PAUL LORIGAN ISSUE)"
+                            f"value {numeric_value} below minimum {rule.min_value}"
                         )
                     
                     if rule.max_value is not None and numeric_value > rule.max_value:
@@ -459,18 +600,3 @@ class DataNormaliser:
             warnings.append(f"Error in sanity checks for {column}: {e}")
             
         return warnings
-
-
-# Future extensibility examples:
-# 
-# class JSONDataExtractor(DataExtractor):
-#     """JSON-specific data extraction"""
-#     def extract_files(self, folder_path: str, period_name: str) -> Dict[str, Dict[str, Any]]:
-#         # Implementation for JSON files
-#         pass
-#
-# class CSVDataExtractor(DataExtractor):
-#     """CSV-specific data extraction"""  
-#     def extract_files(self, folder_path: str, period_name: str) -> Dict[str, Dict[str, Any]]:
-#         # Implementation for CSV files
-#         pass

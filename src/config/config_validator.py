@@ -491,7 +491,7 @@ class ConfigValidator:
                 return
             
             # Check HTML config file exists
-            html_config_path = html_config.get('config_path', 'config/html_generator_config.yaml')
+            html_config_path = html_config.get('config_path', 'html_generator_config.yaml')
             
             if not Path(html_config_path).exists():
                 self._add_result('errors', check_name, f"HTML config file not found: {html_config_path}")
