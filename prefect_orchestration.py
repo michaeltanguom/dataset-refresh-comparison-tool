@@ -29,7 +29,7 @@ from src.config.config_validator import ConfigValidator
 # NEW: Import specific extractors instead of PipelineOrchestrator
 from src.extract.excel_extractor import ExcelDataExtractor
 from src.extract.json_extractor import JSONDataExtractor
-from src.extract.extract_light_transform import DataNormaliser
+from src.extract.light_transform import DataNormaliser
     
 # Transform and load components
 from src.load.load_duckdb import DataLoader
@@ -45,7 +45,7 @@ from src.utils.logging_config import setup_logging, get_logger
 
 try:
     # Import the HTML generation flow
-    from src.html_generator.prefect_html_orchestration import html_generation_flow
+    from src.html_generator.prefect_html_orchestration import unified_html_generation_flow
     HTML_GENERATION_AVAILABLE = True
 except ImportError as e:
     print(f"HTML generation not available: {e}")
@@ -200,66 +200,92 @@ def extract_datasets_task(config_path: str) -> Dict[str, Any]:
         raise ExtractionError(f"Data extraction failed: {e}")
 
 @task(
-    name="normalise_datasets",
-    description="Normalise column names and validate data mappings using refactored modules",
+    name="light_transform_dataframes",
+    description="Light transform: column normalisation, ESI field standardisation, and data validation",
     retries=1,
     retry_delay_seconds=15
 )
-def normalise_datasets_task(config_path: str, extraction_results: Dict[str, Any]) -> Dict[str, Any]:
-    """Prefect task for data normalisation with proper timing"""
+def light_transform_dataframes_task(config_path: str, extraction_results: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    UPDATED Prefect task for comprehensive light transformation
+    Handles: column mapping + ESI field normalisation + validation
+    """
     logger = get_run_logger()
-    logger.info("🔄 Starting data normalisation with refactored modules")
+    logger.info("🔄 Starting light transformation: column mapping + ESI field normalisation")
     
-    # 🔧 FIX: Add timing at task level
     task_start_time = time.time()
     
     try:
         config = ConfigManager(config_path)
-        normaliser = DataNormaliser(config)
+        normaliser = DataNormaliser(config)  # Now from light_transform module
         
-        # Normalise all extracted data
-        normalised_data = normaliser.normalise_datasets(
+        # Apply all transformations: column mapping + ESI normalisation + validation
+        transformed_data = normaliser.normalise_datasets(
             extraction_results['extracted_data']
         )
         
-        # 🔧 FIX: Calculate task-level timing
+        # Get comprehensive transformation summary including ESI stats
+        esi_summary = normaliser.get_normalisation_summary()
+        
         task_duration = time.time() - task_start_time
         
-        normalisation_results = {
-            'normalised_datasets': len(normalised_data),
-            'normalised_data': normalised_data,
+        # Enhanced results with ESI normalisation details
+        transformation_results = {
+            'transformed_datasets': len(transformed_data),
+            'transformed_data': transformed_data,  # Renamed from normalised_data for clarity
+            'esi_normalisation_summary': esi_summary,
             'performance_metrics': {
-                'normalisation_duration': task_duration  # 🔧 FIX: Use task timing
+                'transformation_duration': task_duration  # Renamed from normalisation_duration
             }
         }
         
-        logger.info(f"✅ Normalisation completed: {normalisation_results['normalised_datasets']} datasets in {task_duration:.2f}s")
-        return normalisation_results
+        # Enhanced logging with ESI details
+        logger.info(f"✅ Light transformation completed: {transformation_results['transformed_datasets']} datasets in {task_duration:.2f}s")
+        logger.info(f"🔧 ESI fields normalised: {esi_summary['fields_normalised']} across {esi_summary['dataframes_processed']} DataFrames")
+        logger.info(f"📋 Canonical ESI fields available: {esi_summary['total_canonical_fields']}")
+        
+        if esi_summary['normalisation_errors'] > 0:
+            logger.warning(f"⚠️ ESI normalisation errors: {esi_summary['normalisation_errors']}")
+        
+        return transformation_results
         
     except Exception as e:
-        logger.error(f"❌ Data normalisation failed: {e}")
-        raise NormalisationError(f"Data normalisation failed: {e}")
+        logger.error(f"❌ Light transformation failed: {e}")
+        raise NormalisationError(f"Light transformation failed: {e}")
 
 @task(
     name="load_to_database",
-    description="Load normalised data into DuckDB database using refactored modules",
+    description="Load transformed data into DuckDB database", 
     retries=2,
     retry_delay_seconds=30
 )
-def load_to_database_task(config_path: str, normalisation_results: Dict[str, Any]) -> Dict[str, Any]:
-    """Prefect task for database loading with proper timing"""
+def load_to_database_task(config_path: str, transformation_results: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    FIXED: Load transformed data into DuckDB database
+    """
     logger = get_run_logger()
-    logger.info("🔄 Starting database loading with refactored modules")
+    logger.info("🔄 Starting database loading with transformed data")
     
-    # 🔧 FIX: Add timing at task level
     task_start_time = time.time()
     
     try:
         config = ConfigManager(config_path)
         loader = DataLoader(config)
         
-        # Load all normalised data
-        loaded_tables = loader.load_datasets(normalisation_results['normalised_data'])
+        # FIXED: Use the correct key name from transformation results
+        # Check what key is actually available
+        if 'normalised_data' in transformation_results:
+            data_to_load = transformation_results['normalised_data']
+            logger.debug("Using 'normalised_data' key for loading")
+        elif 'transformed_data' in transformation_results:
+            data_to_load = transformation_results['transformed_data'] 
+            logger.debug("Using 'transformed_data' key for loading")
+        else:
+            available_keys = list(transformation_results.keys())
+            raise DatabaseError(f"Neither 'normalised_data' nor 'transformed_data' found in transformation results. Available keys: {available_keys}")
+        
+        # Load all transformed data
+        loaded_tables = loader.load_datasets(data_to_load)
         
         # Validate loaded data
         validation_results = loader.validate_loaded_data(loaded_tables)
@@ -267,7 +293,6 @@ def load_to_database_task(config_path: str, normalisation_results: Dict[str, Any
         if not validation_results['is_valid']:
             raise DatabaseError(f"Data validation failed after loading: {validation_results['errors']}")
         
-        # 🔧 FIX: Calculate task-level timing
         task_duration = time.time() - task_start_time
         
         loading_results = {
@@ -275,7 +300,7 @@ def load_to_database_task(config_path: str, normalisation_results: Dict[str, Any
             'tables_count': len(loaded_tables),
             'total_rows_loaded': validation_results['total_rows_validated'],
             'performance_metrics': {
-                'loading_duration': task_duration  # 🔧 FIX: Use task timing
+                'loading_duration': task_duration
             }
         }
         
@@ -563,10 +588,11 @@ def generate_html_dashboards_integrated_task(config_path: str, comparison_result
     if not HTML_GENERATION_AVAILABLE:
         logger.warning("HTML generation module not available - skipping")
         return {
-            'status': 'skipped',
+            'pipeline_status': 'SKIPPED',     # ← Fixed: consistent field name
             'reason': 'HTML generation module not available',
-            'generated_dashboards': 0,
-            'performance_metrics': {'html_generation_duration': 0}
+            'dashboards_generated': 0,        # ← Fixed: consistent field name
+            'failed_generations': 0,
+            'performance_metrics': {'html_task_duration': 0}  # ← Fixed: consistent field name
         }
     
     task_start_time = time.time()
@@ -579,26 +605,28 @@ def generate_html_dashboards_integrated_task(config_path: str, comparison_result
         if not html_config.get('enabled', False):
             logger.info("HTML generation is disabled in configuration - skipping")
             return {
-                'status': 'disabled',
+                'pipeline_status': 'SKIPPED',
                 'reason': 'HTML generation disabled in config',
-                'generated_dashboards': 0,
-                'performance_metrics': {'html_generation_duration': 0}
+                'dashboards_generated': 0,
+                'failed_generations': 0,
+                'performance_metrics': {'html_task_duration': 0}
             }
         
         # Ensure comparison reports were generated successfully
         if comparison_results.get('successful_comparisons', 0) == 0:
             logger.warning("No successful comparisons found - skipping HTML generation")
             return {
-                'status': 'skipped',
+                'pipeline_status': 'SKIPPED',
                 'reason': 'No successful comparisons to process',
-                'generated_dashboards': 0,
-                'performance_metrics': {'html_generation_duration': 0}
+                'dashboards_generated': 0,
+                'failed_generations': 0,
+                'performance_metrics': {'html_task_duration': 0}
             }
         
         logger.info(f"Running HTML generation flow for {comparison_results['successful_comparisons']} comparison reports")
         
-        # Call the dedicated HTML generation flow
-        html_results = html_generation_flow(config_path)
+        # 🔧 FIX: Call the correct unified HTML generation flow
+        html_results = unified_html_generation_flow(config_path)
         
         # Calculate task-level timing
         task_duration = time.time() - task_start_time
@@ -628,11 +656,18 @@ def generate_html_dashboards_integrated_task(config_path: str, comparison_result
         task_duration = time.time() - task_start_time
         logger.error(f"❌ HTML generation task failed: {e}")
         
+        # 🔧 FIX: Return consistent error schema
         return {
-            'status': 'failed',
+            'pipeline_status': 'FAILED',
             'error': str(e),
-            'generated_dashboards': 0,
-            'performance_metrics': {'html_generation_duration': task_duration}
+            'dashboards_generated': 0,
+            'failed_generations': 0,
+            'performance_metrics': {'html_task_duration': task_duration},
+            'output_summary': {
+                'files_generated': 0,
+                'total_size_mb': 0,
+                'output_directory': 'html_dashboards'
+            }
         }
 
 # ====================================================
@@ -641,16 +676,16 @@ def generate_html_dashboards_integrated_task(config_path: str, comparison_result
 
 @flow(
     name="dataset-comparison-pipeline-with-html",
-    description="Complete EtLT pipeline with optional HTML dashboard generation",
-    version="2.1.0",  # Increment version
-    timeout_seconds=7200,  # Increase timeout for HTML generation
+    description="Complete EtLT pipeline with optional HTML dashboard generation and integrated ESI normalisation",
+    version="2.2.0",  # Increment version to reflect ESI integration
+    timeout_seconds=7200,  # Keep existing timeout
     log_prints=True
 )
 def dataset_comparison_flow(config_path: str, 
                           include_json_extraction: bool = False,
                           generate_html: bool = False) -> Dict[str, Any]:
     """
-    Main Prefect flow with optional HTML generation
+    Main Prefect flow with optional HTML generation and integrated ESI field normalisation
     
     Args:
         config_path: Path to configuration file
@@ -660,42 +695,53 @@ def dataset_comparison_flow(config_path: str,
     logger = get_run_logger()
     logger.info("🚀 Starting Dataset Comparison Pipeline with HTML Generation")
     logger.info(f"📁 Configuration: {config_path}")
+    logger.info(f"🔧 Enhanced with integrated ESI field normalisation")
     logger.info(f"🎨 HTML Generation: {'Enabled' if generate_html else 'Disabled'}")
     
     try:
-        # Original pipeline steps (unchanged)
+        # Original pipeline steps - keeping your exact structure
         validation_results = validate_pipeline_configuration(config_path)
         extraction_results = extract_datasets_task(config_path)
-        normalisation_results = normalise_datasets_task(config_path, extraction_results)
+        
+        # Now includes ESI field normalisation alongside column mapping
+        normalisation_results = light_transform_dataframes_task(config_path, extraction_results)
+        
         loading_results = load_to_database_task(config_path, normalisation_results)
         cleaning_results = clean_data_task(config_path, loading_results)
         comparison_results = compare_datasets_task(config_path, cleaning_results)
         
-        # Legacy JSON extraction (conditional)
+        # Legacy JSON extraction (conditional) - keeping your exact logic
         json_extraction_results = None
         if include_json_extraction:
             logger.info("🔄 Including legacy JSON extraction")
             json_extraction_results = extract_comparison_reports_task(config_path, comparison_results)
         
-        # NEW: HTML Dashboard Generation (conditional)
+        # HTML Dashboard Generation (conditional) - keeping your exact logic
         html_generation_results = None
         if generate_html:
             logger.info("🎨 Including HTML dashboard generation")
             html_generation_results = generate_html_dashboards_integrated_task(config_path, comparison_results)
         
-        # Enhanced summary generation
+        # Enhanced summary generation - keeping your exact structure
         pipeline_summary = generate_enhanced_pipeline_summary(
             config_path,
             extraction_results,
-            normalisation_results,
+            normalisation_results,  # Now contains ESI normalisation statistics
             loading_results,
             cleaning_results,
             comparison_results,
             json_extraction_results,
-            html_generation_results  # NEW parameter
+            html_generation_results
         )
         
+        # Enhanced completion logging
         logger.info("🎉 Complete pipeline finished successfully!")
+        
+        # NEW: Log ESI normalisation summary if available
+        if 'esi_normalisation_details' in pipeline_summary:
+            esi_details = pipeline_summary['esi_normalisation_details']
+            logger.info(f"🔧 ESI Normalisation completed: {esi_details.get('fields_normalised', 0)} fields normalised across {esi_details.get('dataframes_processed', 0)} DataFrames")
+        
         return pipeline_summary
         
     except Exception as e:
@@ -708,7 +754,7 @@ def dataset_comparison_flow(config_path: str,
             'execution_timestamp': datetime.now().isoformat(),
             'config_file': config_path
         }
-
+    
 @flow(
     name="dataset-comparison-validation-only",
     description="Configuration validation flow for testing",
@@ -818,24 +864,104 @@ def serve_flows():
 # COMMAND LINE INTERFACE
 # ====================================================
 
+@flow(
+    name="dataset-comparison-pipeline-with-html",
+    description="Complete EtLT pipeline with optional HTML dashboard generation and integrated ESI normalisation",
+    version="2.2.0",  # Increment version to reflect ESI integration
+    timeout_seconds=7200,  # Keep existing timeout
+    log_prints=True
+)
+def dataset_comparison_flow(config_path: str, 
+                          include_json_extraction: bool = False,
+                          generate_html: bool = False) -> Dict[str, Any]:
+    """
+    Main Prefect flow with optional HTML generation and integrated ESI field normalisation
+    
+    Args:
+        config_path: Path to configuration file
+        include_json_extraction: Whether to include JSON extraction (legacy option)
+        generate_html: Whether to generate HTML dashboards
+    """
+    logger = get_run_logger()
+    logger.info("🚀 Starting Dataset Comparison Pipeline with HTML Generation")
+    logger.info(f"📁 Configuration: {config_path}")
+    logger.info(f"🔧 Enhanced with integrated ESI field normalisation")
+    logger.info(f"🎨 HTML Generation: {'Enabled' if generate_html else 'Disabled'}")
+    
+    try:
+        # Original pipeline steps - keeping your exact structure
+        validation_results = validate_pipeline_configuration(config_path)
+        extraction_results = extract_datasets_task(config_path)
+        
+        # ENHANCED: Now includes ESI field normalisation alongside column mapping
+        normalisation_results = light_transform_dataframes_task(config_path, extraction_results)
+        
+        loading_results = load_to_database_task(config_path, normalisation_results)
+        cleaning_results = clean_data_task(config_path, loading_results)
+        comparison_results = compare_datasets_task(config_path, cleaning_results)
+        
+        # Legacy JSON extraction (conditional) - keeping your exact logic
+        json_extraction_results = None
+        if include_json_extraction:
+            logger.info("🔄 Including legacy JSON extraction")
+            json_extraction_results = extract_comparison_reports_task(config_path, comparison_results)
+        
+        # HTML Dashboard Generation (conditional) - keeping your exact logic
+        html_generation_results = None
+        if generate_html:
+            logger.info("🎨 Including HTML dashboard generation")
+            html_generation_results = generate_html_dashboards_integrated_task(config_path, comparison_results)
+        
+        # Enhanced summary generation - keeping your exact structure
+        pipeline_summary = generate_enhanced_pipeline_summary(
+            config_path,
+            extraction_results,
+            normalisation_results,  # Now contains ESI normalisation statistics
+            loading_results,
+            cleaning_results,
+            comparison_results,
+            json_extraction_results,
+            html_generation_results
+        )
+        
+        # Enhanced completion logging
+        logger.info("🎉 Complete pipeline finished successfully!")
+        
+        # NEW: Log ESI normalisation summary if available
+        if 'esi_normalisation_details' in pipeline_summary:
+            esi_details = pipeline_summary['esi_normalisation_details']
+            logger.info(f"🔧 ESI Normalisation completed: {esi_details.get('fields_normalised', 0)} fields normalised across {esi_details.get('dataframes_processed', 0)} DataFrames")
+        
+        return pipeline_summary
+        
+    except Exception as e:
+        logger.error(f"💥 Pipeline failed: {e}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
+        
+        return {
+            'pipeline_status': 'FAILED',
+            'error': str(e),
+            'execution_timestamp': datetime.now().isoformat(),
+            'config_file': config_path
+        }
+
+
+# Keep your existing CLI main() function logic but update the success logging
 def main():
-    """Main execution function with HTML generation options"""
+    """Updated main execution function with ESI normalisation details"""
     parser = argparse.ArgumentParser(
-        description="Prefect Orchestration for Dataset Comparison Pipeline with HTML Generation",
+        description="Prefect Orchestration for Dataset Comparison Pipeline with HTML Generation and ESI Normalisation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run full pipeline without HTML generation
+  # Run full pipeline without HTML generation (now includes ESI normalisation)
   python prefect_orchestration.py --config config/comparison_config.yaml --run
 
-  # Run full pipeline with HTML dashboard generation
+  # Run full pipeline with HTML dashboard generation (now includes ESI normalisation)
   python prefect_orchestration.py --config config/comparison_config.yaml --run --generate-html
 
-  # Run with both JSON extraction and HTML generation
+  # Run with both JSON extraction and HTML generation (now includes ESI normalisation)
   python prefect_orchestration.py --config config/comparison_config.yaml --run --include-json --generate-html
-
-  # HTML generation only (requires existing comparison reports)
-  python html_generation_orchestration.py --config config/comparison_config.yaml --run
         """
     )
     
@@ -869,10 +995,11 @@ Examples:
             
         elif args.run:
             print("🚀 Running full pipeline...")
+            print("🔧 Enhanced with integrated ESI field normalisation")
             if args.generate_html:
                 print("🎨 HTML dashboard generation enabled")
             
-            # Run with new parameters
+            # Run your existing flow with ESI enhancement
             result = dataset_comparison_flow(
                 args.config, 
                 include_json_extraction=args.include_json,
@@ -889,7 +1016,12 @@ Examples:
                 print(f"📈 Datasets Processed: {result.get('data_statistics', {}).get('total_datasets_extracted', 0)}")
                 print(f"🔄 Comparisons Completed: {result.get('data_statistics', {}).get('successful_comparisons', 0)}")
                 
-                # Show HTML generation results
+                # NEW: Show ESI normalisation results
+                esi_fields_normalised = result.get('data_statistics', {}).get('esi_fields_normalised', 0)
+                if esi_fields_normalised > 0:
+                    print(f"🔧 ESI Fields Normalised: {esi_fields_normalised}")
+                
+                # Show HTML generation results (keeping your existing logic)
                 if result.get('step_completion', {}).get('html_generation', False):
                     html_dashboards = result.get('data_statistics', {}).get('html_dashboards_generated', 0)
                     html_size = result.get('html_output', {}).get('total_size_mb', 0)
@@ -903,7 +1035,22 @@ Examples:
                 step_perf = result.get('step_performance', {})
                 for step, duration in step_perf.items():
                     if isinstance(duration, (int, float)):
-                        print(f"  {step.title()}: {duration:.2f}s")
+                        # Enhanced step names for clarity
+                        step_display = step.title()
+                        if step == 'normalisation':
+                            step_display = "Normalisation (inc. ESI)"
+                        print(f"  {step_display}: {duration:.2f}s")
+                
+                # NEW: Show ESI normalisation details if available
+                if 'esi_normalisation_details' in result:
+                    esi_details = result['esi_normalisation_details']
+                    print(f"\n🔧 ESI Normalisation Details:")
+                    print(f"  DataFrames Processed: {esi_details.get('dataframes_processed', 0)}")
+                    print(f"  Fields Normalised: {esi_details.get('fields_normalised', 0)}")
+                    print(f"  Canonical Fields Available: {esi_details.get('total_canonical_fields', 0)}")
+                    
+                    if esi_details.get('normalisation_errors', 0) > 0:
+                        print(f"  ⚠️ Normalisation Errors: {esi_details['normalisation_errors']}")
                 
                 print("=" * 70)
                 return 0
@@ -920,7 +1067,6 @@ Examples:
         if args.verbose:
             print(f"📋 Traceback: {traceback.format_exc()}")
         return 1
-
 
 if __name__ == "__main__":
     exit_code = main()

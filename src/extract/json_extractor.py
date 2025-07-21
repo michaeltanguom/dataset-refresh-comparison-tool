@@ -9,7 +9,7 @@ from typing import Dict, List, Any, Optional, Tuple
 import time
 import re
 
-from .extract_light_transform import DataExtractor, DatasetMetadata
+from .base_extract import DataExtractor, DatasetMetadata
 from ..utils.exceptions import ExtractionError
 from ..utils.logging_config import get_logger
 from ..utils.common import normalise_text, generate_timestamp

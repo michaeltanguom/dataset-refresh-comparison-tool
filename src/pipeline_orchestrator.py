@@ -22,7 +22,7 @@ try:
     # Try relative imports first (when run as part of src package)
     from .config.config_manager import ConfigManager
     from .config.config_validator import ConfigValidator
-    from .extract.extract_light_transform import ExcelDataExtractor, DataNormaliser
+    from .extract.base_extract import ExcelDataExtractor, DataNormaliser
     from .load.load_duckdb import DataLoader
     from .transform.clean_duckdb_tables import DataCleaner
     from .transform.compare_datasets import DataComparator
@@ -36,7 +36,7 @@ except ImportError:
     # Fall back to absolute imports (when run directly)
     from config.config_manager import ConfigManager
     from config.config_validator import ConfigValidator
-    from extract.extract_light_transform import ExcelDataExtractor, DataNormaliser
+    from extract.base_extract import ExcelDataExtractor, DataNormaliser
     from load.load_duckdb import DataLoader
     from transform.clean_duckdb_tables import DataCleaner
     from transform.compare_datasets import DataComparator
