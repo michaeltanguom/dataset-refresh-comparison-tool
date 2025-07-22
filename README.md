@@ -46,6 +46,26 @@ src/
 - Python 3.9+
 - Required packages: `pip install -r requirements.txt`
 
+### Virtual Environment set up
+
+1. Create and activate a virtual environment
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# On macOS/Linux:
+source venv/bin/activate
+
+# On Windows:
+venv\Scripts\activate
+
+2. Install dependencies
+# Upgrade pip
+python -m pip install --upgrade pip
+
+# Install requirements
+pip install -r requirements.txt
+
 ### Basic Usage
 
 1. **Configure your pipeline**:
@@ -60,12 +80,17 @@ src/
        period_name: "july"
    ```
 
-2. **Run the complete pipeline**:
+2. **Start the Prefect server in the terminal**
+   ```bash
+   prefect server start
+   ```
+
+3. **Run the complete pipeline**:
    ```bash
    python prefect_orchestration.py --config config/comparison_config.yaml --run
    ```
 
-3. **Generate HTML dashboards**:
+4. **Generate HTML dashboards**:
    ```bash
    python prefect_orchestration.py --config config/comparison_config.yaml --run --generate-html
    ```
