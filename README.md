@@ -179,23 +179,22 @@ templates:
 
 ### 1. Extract Phase
 - **Excel Data Extractor**: Processes multiple sheets from Excel files
-- **Data Normalizer**: Standardizes column names and ESI field values
+- **Data Normalizer**: Standardises column names and ESI field values
 - **Validation**: Ensures data quality and completeness
 
 ### 2. Load Phase
-- **DuckDB Integration**: High-performance analytical database
+- **DuckDB Integration**: High-performance analytical database powering transformations and loading
 - **Schema Management**: Configurable table schemas
 - **Data Validation**: Post-load integrity checks
 
 ### 3. Transform Phase
-- **Data Cleaning**: Handle nulls, duplicates, and outliers
+- **Data Cleaning**: Handle nulls, duplicates and identifies outliers using IQR
 - **Comparison Engine**: Identify changes between time periods
 - **Report Generation**: JSON-based comparison reports
 
 ### 4. Dashboard Generation
 - **Template System**: Flexible HTML template engine
 - **Interactive Features**: Sorting, filtering, and search
-- **Responsive Design**: Mobile-friendly dashboards
 
 ## Output Reports
 
