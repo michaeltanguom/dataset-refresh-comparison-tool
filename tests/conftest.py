@@ -16,6 +16,7 @@ sys.path.insert(0, str(project_root))
 # Import fixtures from fixtures module
 from tests.fixtures.config_fixtures import *
 from tests.fixtures.utils_fixtures import *
+from tests.fixtures.extract_fixtures import *
 from tests.fixtures.mock_objects import *
 
 @pytest.fixture(scope="session")
