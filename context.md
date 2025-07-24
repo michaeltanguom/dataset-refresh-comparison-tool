@@ -55,6 +55,7 @@ tests/
 │   │   ├── test_config_manager.py
 │   │   └── test_config_validator.py
 │   ├── test_extract/             # Extraction module tests
+│   │   ├── test_base_extract.py
 │   │   ├── test_excel_extractor.py
 │   │   ├── test_json_extractor.py
 │   │   └── test_light_transform.py
