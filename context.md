@@ -76,3 +76,9 @@ tests/
 │   └── test_html_pipeline.py
 └── integration/                  # End-to-end tests
     └── test_full_pipeline.py
+
+Unit tests left to create:
+test_load
+test_html_generator
+component
+integration
