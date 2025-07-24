@@ -185,7 +185,7 @@ templates:
       colour_scheme: "blue_gradient"
 ```
 
-## 🔧 Pipeline Components
+## Pipeline Components
 
 ### 1. Extract Phase
 - **Excel Data Extractor**: Processes multiple sheets from Excel files
@@ -369,7 +369,7 @@ The system includes comprehensive error handling:
 
 All errors are logged with detailed context and suggested resolutions.
 
-## 📈 Design Considerations
+## Design Considerations
 
 ### Scalability
 - **Modular Design**: Easy to extend with new data sources
