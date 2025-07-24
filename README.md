@@ -46,6 +46,26 @@ src/
 - Python 3.9+
 - Required packages: `pip install -r requirements.txt`
 
+### Virtual Environment set up
+
+1. Create and activate a virtual environment
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# On macOS/Linux:
+source venv/bin/activate
+
+# On Windows:
+venv\Scripts\activate
+
+2. Install dependencies
+# Upgrade pip
+python -m pip install --upgrade pip
+
+# Install requirements
+pip install -r requirements.txt
+
 ### Basic Usage
 
 1. **Configure your pipeline**:
@@ -60,12 +80,17 @@ src/
        period_name: "july"
    ```
 
-2. **Run the complete pipeline**:
+2. **Start the Prefect server in the terminal**
+   ```bash
+   prefect server start
+   ```
+
+3. **Run the complete pipeline**:
    ```bash
    python prefect_orchestration.py --config config/comparison_config.yaml --run
    ```
 
-3. **Generate HTML dashboards**:
+4. **Generate HTML dashboards**:
    ```bash
    python prefect_orchestration.py --config config/comparison_config.yaml --run --generate-html
    ```
@@ -154,23 +179,22 @@ templates:
 
 ### 1. Extract Phase
 - **Excel Data Extractor**: Processes multiple sheets from Excel files
-- **Data Normalizer**: Standardizes column names and ESI field values
+- **Data Normalizer**: Standardises column names and ESI field values
 - **Validation**: Ensures data quality and completeness
 
 ### 2. Load Phase
-- **DuckDB Integration**: High-performance analytical database
+- **DuckDB Integration**: High-performance analytical database powering transformations and loading
 - **Schema Management**: Configurable table schemas
 - **Data Validation**: Post-load integrity checks
 
 ### 3. Transform Phase
-- **Data Cleaning**: Handle nulls, duplicates, and outliers
+- **Data Cleaning**: Handle nulls, duplicates and identifies outliers using IQR
 - **Comparison Engine**: Identify changes between time periods
 - **Report Generation**: JSON-based comparison reports
 
 ### 4. Dashboard Generation
 - **Template System**: Flexible HTML template engine
 - **Interactive Features**: Sorting, filtering, and search
-- **Responsive Design**: Mobile-friendly dashboards
 
 ## Output Reports
 
