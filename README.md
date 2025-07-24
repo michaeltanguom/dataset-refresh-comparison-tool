@@ -1,6 +1,6 @@
-# Dataset Refresh Comparison Tool
+# Researcher Dataset Refresh Comparison Tool
 
-A robust Python-based EtLT (Extract, transform, Load, Transform) pipeline for comparing research datasets across different time periods, with automated report generation and interactive HTML dashboards.
+A robust Python-based EtLT (Extract, light transform, Load, Transform) pipeline for comparing research datasets across different time periods, with automated report generation and interactive HTML dashboards.
 
 ## Overview
 
