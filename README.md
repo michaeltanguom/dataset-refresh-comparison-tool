@@ -56,18 +56,18 @@ Create and activate a virtual environment
 
 2a. **Activate virtual environment**
     **On macOS/Linux:**
-    ```bash
+    ```
     source venv/bin/activate
     ```
 
 2b. **On Windows:**
-    ```bash
+    ```
     venv\Scripts\activate
     ```
 
 3. **Install dependencies**
     **Upgrade pip**
-    ```bash
+    ```
     python -m pip install --upgrade pip
     ```
 
