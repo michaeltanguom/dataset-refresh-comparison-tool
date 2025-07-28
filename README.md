@@ -189,7 +189,7 @@ templates:
 
 ### 1. Extract Phase
 - **Excel Data Extractor**: Processes multiple sheets from Excel files
-- **Data Normalizer**: Standardises column names and ESI field values
+- **Data Normaliser**: Standardises column names and ESI field values
 - **Validation**: Ensures data quality and completeness
 
 ### 2. Load Phase
@@ -238,12 +238,12 @@ html_reports/
 
 ## Advanced Features
 
-### ESI Field Normalization
+### ESI Field Normalisation
 
 The system automatically standardises research field names to canonical formats:
 
 ```python
-# Automatic normalization
+# Automatic normalisation
 "agricultural sciences" → "Agricultural Sciences"
 "computer science" → "Computer Science"
 "biology_biochemistry" → "Biology Biochemistry"
@@ -353,7 +353,7 @@ dataset-refresh-comparison-tool/
 - **Cleaning Strategies**: Handle nulls, duplicates, outliers
 - **Validation Rules**: Customisable data quality checks
 
-### Output Customization
+### Output Customisation
 - **Report Formats**: JSON, HTML dashboards
 - **Template Selection**: Multiple dashboard templates
 - **Styling Options**: Configurable themes and layouts
