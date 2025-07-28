@@ -264,11 +264,11 @@ Built-in performance tracking and metrics:
 
 ```python
 # Automatic performance logging
-⏱️  Extraction: 2.3s (1,234 records)
-⏱️  Normalisation: 1.1s (ESI fields: 89 normalised)
-⏱️  Loading: 0.8s (2 tables created)
-⏱️  Cleaning: 1.5s (validation passed)
-⏱️  Comparison: 3.2s (5 comparisons completed)
+    Extraction: 2.3s (1,234 records)
+    Normalisation: 1.1s (ESI fields: 89 normalised)
+    Loading: 0.8s (2 tables created)
+    Cleaning: 1.5s (validation passed)
+    Comparison: 3.2s (5 comparisons completed)
 ```
 
 ## Database Schema
