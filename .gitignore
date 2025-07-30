@@ -149,7 +149,7 @@ dmypy.json
 
 # DuckDB databases
 *.duckdb
-hcp_comparison.db
+*.db
 
 # Other database files
 *.mdb
@@ -159,23 +159,24 @@ hcp_comparison.db
 # Data Files (SENSITIVE - Institutional Data)
 # ================================
 
+# 
+
 # Excel files with researcher data
 *.xlsx
 *.xls
 *.xlsm
 
+# JSON payloads
+*.json
+
 # CSV files with data
 *.csv
 
 # Data directories by time period
+data/
 Feb2025/
 July2025/
-*2025/
-*2024/
-*2023/
-data/
-raw_data/
-input_data/
+
 
 # Backup data
 *.bak

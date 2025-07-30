@@ -80,14 +80,12 @@ class ExcelDataExtractor(DataExtractor):
                                 self.logger.info(f"Reading sheet: {sheet_name}")
                                 df = pd.read_excel(file_path, sheet_name=sheet_name, header=0)
                                 
-                                # === APPLY OLD SYSTEM'S ROBUST VALIDATION ===
-                                
-                                # FIX 1: Check if DataFrame is empty or has no columns (from old system)
+                                # Check if DataFrame is empty or has no columns
                                 if df.empty or len(df.columns) == 0:
                                     self.logger.warning(f"Sheet '{sheet_name}' in {file_path.name} is empty or has no columns - skipping")
                                     continue
                                 
-                                # FIX 2: Robust column name cleaning (from old system)
+                                # Robust column name type enforcement
                                 if len(df.columns) > 0:
                                     # Ensure columns are strings before applying string operations
                                     df.columns = [str(col).strip() if col is not None else 'Unnamed' for col in df.columns]
@@ -97,7 +95,7 @@ class ExcelDataExtractor(DataExtractor):
                                 
                                 self.logger.info(f"Sheet '{sheet_name}' original columns: {list(df.columns)}")
                                 
-                                # Clean column names using your existing function
+                                # Clean column names
                                 df = clean_dataframe_columns(df)
                                 
                                 # Additional validation after cleaning
@@ -105,7 +103,7 @@ class ExcelDataExtractor(DataExtractor):
                                     self.logger.warning(f"Sheet '{sheet_name}' in {file_path.name} became empty after cleaning - skipping")
                                     continue
                                 
-                                # FIX 3: Apply old system's name filtering logic HERE (not in load phase)
+                                # Apply old system's name filtering logic
                                 # This ensures consistent row counts throughout the pipeline
                                 initial_count = len(df)
                                 

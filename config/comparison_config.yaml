@@ -31,6 +31,7 @@ sheets_to_process:
   - "Incites Researchers"
 
 # Column mapping from Excel columns to normalised names
+# Normalised name: "original name"
 column_mapping:
   name: "Name"
   percent_docs_cited: "% Docs Cited"
