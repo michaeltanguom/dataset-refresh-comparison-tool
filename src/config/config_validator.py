@@ -37,12 +37,12 @@ class ConfigValidator:
     
     def validate_all(self) -> Dict[str, Any]:
         """
-        Run all validation checks
+        Run all validation checks - updated for new light_transform structure
         
         Returns:
             Dictionary with validation results
         """
-        logger.info("Starting comprehensive configuration validation")
+        logger.info("Starting comprehensive configuration validation with light transform support")
         
         # Reset results
         self.validation_results = {
@@ -55,14 +55,23 @@ class ConfigValidator:
         self._validate_data_source_paths()
         self._validate_database_configuration()
         self._validate_schema_configuration()
-        self._validate_column_mapping_completeness()
+        
+        # NEW: Light transform validation
+        self._validate_light_transform_configuration()
+        self._validate_light_transform_column_mapping()
+        self._validate_esi_normalisation_configuration()
+        self._validate_duplicate_removal_configuration()
+        self._validate_null_handling_configuration()
+        self._validate_light_transform_validation_configuration()
+        
+        # Existing validations (updated for new structure)
         self._validate_validation_rules()
         self._validate_output_configuration()
         self._validate_table_naming()
         self._validate_logging_configuration()
-        self._validate_data_cleaning_configuration()
+        self._validate_statistical_methods_configuration()
         self._validate_comparison_configuration()
-        self._validate_cross_dependencies()
+        self._validate_cross_dependencies_light_transform()
         self._validate_html_generation_configuration()
         
         # Summarise results
@@ -353,53 +362,365 @@ class ConfigValidator:
         except Exception as e:
             self._add_result('errors', check_name, f"Error validating logging configuration: {e}")
     
-    def _validate_data_cleaning_configuration(self) -> None:
-        """Validate data cleaning configuration"""
-        check_name = "data_cleaning_configuration"
+    def _validate_light_transform_configuration(self) -> None:
+        """Validate light transform configuration structure"""
+        check_name = "light_transform_configuration"
         
         try:
-            cleaning_config = self.config.get_data_cleaning_config()
+            light_transform_config = self.config.get_light_transform_config()
             
-            # Validate null handling strategy
-            null_strategy = cleaning_config.get('handle_nulls', {}).get('strategy', 'fail')
-            valid_strategies = ['fail', 'skip', 'default']
+            # Check required sections exist
+            required_sections = ['column_mapping', 'esi_normalisation', 'duplicate_removal', 'null_handling', 'validation']
             
-            if null_strategy not in valid_strategies:
-                self._add_result('errors', check_name, f"Invalid null handling strategy: {null_strategy}")
-            else:
-                self._add_result('passed', check_name, f"Null handling strategy is valid: {null_strategy}")
-            
-            # Validate outlier detection configuration
-            outlier_config = cleaning_config.get('outlier_detection', {})
-            if outlier_config.get('enabled', False):
-                methods = outlier_config.get('methods', [])
-                valid_methods = ['iqr', 'zscore']
-                
-                invalid_methods = [m for m in methods if m not in valid_methods]
-                if invalid_methods:
-                    self._add_result('errors', check_name, f"Invalid outlier detection methods: {invalid_methods}")
+            for section in required_sections:
+                if section not in light_transform_config or not light_transform_config[section]:
+                    self._add_result('errors', check_name, f"Missing or empty light_transform.{section} configuration")
                 else:
-                    self._add_result('passed', check_name, f"Outlier detection methods are valid: {methods}")
-                
-                # Check z-score threshold
-                z_threshold = outlier_config.get('z_threshold', 3)
-                if not isinstance(z_threshold, (int, float)) or z_threshold <= 0:
-                    self._add_result('warnings', check_name, f"Invalid z-score threshold: {z_threshold}")
-                else:
-                    self._add_result('passed', check_name, f"Z-score threshold is valid: {z_threshold}")
+                    self._add_result('passed', check_name, f"light_transform.{section} configuration exists")
+            
+            # Check for legacy configurations that should be migrated
+            if 'column_mapping' in self.config.config and 'column_mapping' in light_transform_config:
+                self._add_result('warnings', check_name, "Both legacy column_mapping and light_transform.column_mapping exist. Consider removing legacy version.")
+            
+            if 'column_mapping_variants' in self.config.config:
+                self._add_result('warnings', check_name, "Legacy column_mapping_variants found. This feature is deprecated and will be ignored.")
             
         except Exception as e:
-            self._add_result('errors', check_name, f"Error validating data cleaning configuration: {e}")
+            self._add_result('errors', check_name, f"Error validating light_transform configuration: {e}")
+
+    def _validate_light_transform_column_mapping(self) -> None:
+        """Validate light transform column mapping completeness"""
+        check_name = "light_transform_column_mapping"
+        
+        try:
+            column_mapping = self.config.get_light_transform_column_mapping()
+            critical_columns = self.config.get_critical_columns()
+            
+            if not column_mapping:
+                self._add_result('errors', check_name, "Column mapping is empty or missing")
+                return
+            
+            # Check all critical columns are mapped
+            missing_mappings = []
+            for critical_col in critical_columns:
+                if critical_col not in column_mapping:
+                    missing_mappings.append(critical_col)
+            
+            if missing_mappings:
+                self._add_result('errors', check_name, f"Critical columns not mapped in light_transform.column_mapping: {missing_mappings}")
+            else:
+                self._add_result('passed', check_name, f"All {len(critical_columns)} critical columns are mapped in light_transform")
+            
+            # Check for duplicate target columns
+            target_columns = list(column_mapping.values())
+            duplicates = [col for col in set(target_columns) if target_columns.count(col) > 1]
+            
+            if duplicates:
+                self._add_result('errors', check_name, f"Duplicate target columns in light_transform.column_mapping: {duplicates}")
+            else:
+                self._add_result('passed', check_name, "No duplicate target columns in light_transform column mapping")
+            
+            # Validate column name formats
+            invalid_names = []
+            for norm_col, target_col in column_mapping.items():
+                if not re.match(r'^[a-z][a-z0-9_]*$', norm_col):
+                    invalid_names.append(norm_col)
+            
+            if invalid_names:
+                self._add_result('warnings', check_name, f"Column names don't follow snake_case convention: {invalid_names}")
+            else:
+                self._add_result('passed', check_name, "All column names follow snake_case convention")
+                
+        except Exception as e:
+            self._add_result('errors', check_name, f"Error validating light_transform column mapping: {e}")
+
+    def _validate_esi_normalisation_configuration(self) -> None:
+        """Validate ESI normalisation configuration"""
+        check_name = "esi_normalisation_configuration"
+        
+        try:
+            esi_config = self.config.get_esi_normalisation_config()
+            
+            # Check if enabled
+            if not esi_config.get('enabled', True):
+                self._add_result('warnings', check_name, "ESI normalisation is disabled")
+                return
+            
+            # Validate canonical mappings
+            canonical_mappings = esi_config.get('canonical_mappings', {})
+            
+            if not canonical_mappings:
+                self._add_result('errors', check_name, "ESI canonical mappings are empty")
+                return
+            
+            # Check expected ESI fields are present
+            expected_fields = [
+                'agricultural sciences', 'biology_biochemistry', 'chemistry', 'clinical medicine',
+                'computer science', 'economics and business', 'engineering', 'environment_ecology',
+                'geosciences', 'immunology', 'materials science', 'microbiology',
+                'molecular biology and genetics', 'neuroscience and behaviour',
+                'pharmacology and toxicology', 'physics', 'plant and animal science',
+                'psychiatry_psychology', 'social sciences', 'space science'
+            ]
+            
+            missing_fields = [field for field in expected_fields if field not in canonical_mappings]
+            if missing_fields:
+                self._add_result('warnings', check_name, f"Missing canonical ESI field mappings: {missing_fields}")
+            else:
+                self._add_result('passed', check_name, f"All {len(expected_fields)} expected ESI field mappings are present")
+            
+            # Validate unknown field strategy
+            unknown_strategy = esi_config.get('unknown_field_strategy', 'keep_original')
+            valid_strategies = ['keep_original', 'flag_error', 'use_default']
+            
+            if unknown_strategy not in valid_strategies:
+                self._add_result('errors', check_name, f"Invalid unknown_field_strategy: {unknown_strategy}. Must be one of: {valid_strategies}")
+            else:
+                self._add_result('passed', check_name, f"Unknown field strategy is valid: {unknown_strategy}")
+                
+        except Exception as e:
+            self._add_result('errors', check_name, f"Error validating ESI normalisation configuration: {e}")
+
+    def _validate_duplicate_removal_configuration(self) -> None:
+        """Validate duplicate removal configuration"""
+        check_name = "duplicate_removal_configuration"
+        
+        try:
+            duplicate_config = self.config.get_duplicate_removal_config()
+            column_mapping = self.config.get_light_transform_column_mapping()
+            
+            # Check if enabled
+            if not duplicate_config.get('enabled', True):
+                self._add_result('passed', check_name, "Duplicate removal is disabled")
+                return
+            
+            # Validate duplicate check columns exist in column mapping
+            check_columns = duplicate_config.get('duplicate_check_columns', [])
+            
+            if not check_columns:
+                self._add_result('warnings', check_name, "No duplicate check columns specified")
+                return
+            
+            missing_columns = [col for col in check_columns if col not in column_mapping]
+            if missing_columns:
+                self._add_result('errors', check_name, f"Duplicate check columns not found in column mapping: {missing_columns}")
+            else:
+                self._add_result('passed', check_name, f"All {len(check_columns)} duplicate check columns are valid")
+            
+            # Validate strategy
+            strategy = duplicate_config.get('strategy', 'keep_first')
+            valid_strategies = ['keep_first', 'keep_last', 'flag_all']
+            
+            if strategy not in valid_strategies:
+                self._add_result('errors', check_name, f"Invalid duplicate removal strategy: {strategy}. Must be one of: {valid_strategies}")
+            else:
+                self._add_result('passed', check_name, f"Duplicate removal strategy is valid: {strategy}")
+                
+        except Exception as e:
+            self._add_result('errors', check_name, f"Error validating duplicate removal configuration: {e}")
+
+    def _validate_null_handling_configuration(self) -> None:
+        """Validate NULL handling configuration"""
+        check_name = "null_handling_configuration"
+        
+        try:
+            null_config = self.config.get_null_handling_config()
+            column_mapping = self.config.get_light_transform_column_mapping()
+            
+            # Validate strategy
+            strategy = null_config.get('strategy', 'fail')
+            valid_strategies = ['fail', 'skip', 'default', 'interpolate']
+            
+            if strategy not in valid_strategies:
+                self._add_result('errors', check_name, f"Invalid NULL handling strategy: {strategy}. Must be one of: {valid_strategies}")
+            else:
+                self._add_result('passed', check_name, f"NULL handling strategy is valid: {strategy}")
+            
+            # If strategy is 'default', validate default values
+            if strategy == 'default':
+                default_values = null_config.get('default_values', {})
+                
+                if not default_values:
+                    self._add_result('warnings', check_name, "NULL handling strategy is 'default' but no default values specified")
+                else:
+                    # Check that default value columns exist in column mapping
+                    invalid_defaults = [col for col in default_values.keys() if col not in column_mapping]
+                    if invalid_defaults:
+                        self._add_result('errors', check_name, f"Default value columns not found in column mapping: {invalid_defaults}")
+                    else:
+                        self._add_result('passed', check_name, f"All {len(default_values)} default value columns are valid")
+            
+            # Validate critical fields never null
+            critical_never_null = null_config.get('critical_fields_never_null', [])
+            missing_critical = [col for col in critical_never_null if col not in column_mapping]
+            
+            if missing_critical:
+                self._add_result('errors', check_name, f"Critical never-null fields not found in column mapping: {missing_critical}")
+            else:
+                self._add_result('passed', check_name, f"All {len(critical_never_null)} critical never-null fields are valid")
+                
+        except Exception as e:
+            self._add_result('errors', check_name, f"Error validating NULL handling configuration: {e}")
+
+    def _validate_light_transform_validation_configuration(self) -> None:
+        """Validate light transform validation configuration"""
+        check_name = "light_transform_validation_configuration"
+        
+        try:
+            validation_config = self.config.get_light_transform_validation_config()
+            
+            # Check if enabled
+            if not validation_config.get('enabled', True):
+                self._add_result('warnings', check_name, "Light transform validation is disabled")
+                return
+            
+            # Validate checks
+            checks = validation_config.get('checks', [])
+            valid_checks = [
+                'check_required_columns',
+                'check_data_types',
+                'check_value_ranges',
+                'check_null_constraints',
+                'check_duplicate_constraints'
+            ]
+            
+            invalid_checks = [check for check in checks if check not in valid_checks]
+            if invalid_checks:
+                self._add_result('errors', check_name, f"Invalid validation checks: {invalid_checks}. Valid checks: {valid_checks}")
+            else:
+                self._add_result('passed', check_name, f"All {len(checks)} validation checks are valid")
+            
+            # Validate performance limits
+            max_time = validation_config.get('max_processing_time_seconds', 30)
+            max_memory = validation_config.get('max_memory_usage_mb', 500)
+            
+            if not isinstance(max_time, (int, float)) or max_time <= 0:
+                self._add_result('warnings', check_name, f"Invalid max processing time: {max_time}")
+            else:
+                self._add_result('passed', check_name, f"Max processing time is valid: {max_time}s")
+            
+            if not isinstance(max_memory, (int, float)) or max_memory <= 0:
+                self._add_result('warnings', check_name, f"Invalid max memory usage: {max_memory}")
+            else:
+                self._add_result('passed', check_name, f"Max memory usage is valid: {max_memory}MB")
+                
+        except Exception as e:
+            self._add_result('errors', check_name, f"Error validating light transform validation configuration: {e}")
+
+    def _validate_cross_dependencies_light_transform(self) -> None:
+        """Validate cross-dependencies between light transform and other configuration sections"""
+        check_name = "cross_dependencies_light_transform"
+        
+        try:
+            column_mapping = self.config.get_light_transform_column_mapping()
+            critical_columns = self.config.get_critical_columns()
+            validation_rules = self.config.get_validation_rules()
+            statistical_config = self.config.get_statistical_methods_config()
+            
+            # Check that critical columns reference valid mapped columns
+            invalid_critical = [col for col in critical_columns if col not in column_mapping]
+            if invalid_critical:
+                self._add_result('errors', check_name, f"Critical columns reference unmapped columns: {invalid_critical}")
+            else:
+                self._add_result('passed', check_name, "All critical columns reference valid mapped columns")
+            
+            # Check that validation rules reference valid mapped columns
+            invalid_validation = [col for col in validation_rules.keys() if col not in column_mapping]
+            if invalid_validation:
+                self._add_result('errors', check_name, f"Validation rules reference unmapped columns: {invalid_validation}")
+            else:
+                self._add_result('passed', check_name, "All validation rule columns reference valid mapped columns")
+            
+            # Check that statistical methods fields reference valid mapped columns
+            if statistical_config.get('enabled', True):
+                fields_to_analyse = statistical_config.get('fields_to_analyse', [])
+                invalid_statistical = [col for col in fields_to_analyse if col not in column_mapping]
+                
+                if invalid_statistical:
+                    self._add_result('errors', check_name, f"Statistical methods fields reference unmapped columns: {invalid_statistical}")
+                else:
+                    self._add_result('passed', check_name, "All statistical analysis fields reference valid mapped columns")
+            
+            # Validate consistency between duplicate removal and critical columns
+            duplicate_config = self.config.get_duplicate_removal_config()
+            if duplicate_config.get('enabled', True):
+                duplicate_columns = duplicate_config.get('duplicate_check_columns', [])
+                
+                # Check if critical columns are included in duplicate checking
+                critical_for_duplicates = ['name', 'esi_field']  # Key fields for duplicate detection
+                missing_from_duplicate_check = [col for col in critical_for_duplicates if col not in duplicate_columns]
+                
+                if missing_from_duplicate_check:
+                    self._add_result('warnings', check_name, f"Critical fields not included in duplicate checking: {missing_from_duplicate_check}")
+                else:
+                    self._add_result('passed', check_name, "Key critical fields are included in duplicate checking")
+            
+            # Check validation rule coverage
+            validation_rule_coverage = len([col for col in critical_columns if col in validation_rules])
+            coverage_percent = (validation_rule_coverage / len(critical_columns)) * 100 if critical_columns else 0
+            
+            if coverage_percent < 100:
+                self._add_result('warnings', check_name, f"Validation rules only cover {coverage_percent:.0f}% of critical columns")
+            else:
+                self._add_result('passed', check_name, "Validation rules cover all critical columns")
+                
+        except Exception as e:
+            self._add_result('errors', check_name, f"Error validating cross-dependencies for light transform: {e}")
+
+    def _validate_statistical_methods_configuration(self) -> None:
+        """Validate statistical methods configuration - updated for light transform compatibility"""
+        check_name = "statistical_methods_configuration"
+        
+        try:
+            statistical_config = self.config.get_statistical_methods_config()
+            
+            if not statistical_config.get('enabled', True):
+                self._add_result('passed', check_name, "Statistical methods are disabled")
+                return
+            
+            # Check fields to analyse exist in light transform column mapping
+            column_mapping = self.config.get_light_transform_column_mapping()
+            fields_to_analyse = statistical_config.get('fields_to_analyse', [])
+            
+            if not fields_to_analyse:
+                self._add_result('warnings', check_name, "No fields specified for statistical analysis")
+                return
+            
+            missing_fields = [field for field in fields_to_analyse if field not in column_mapping]
+            if missing_fields:
+                self._add_result('errors', check_name, f"Statistical analysis fields not found in light_transform.column_mapping: {missing_fields}")
+            else:
+                self._add_result('passed', check_name, f"All {len(fields_to_analyse)} statistical analysis fields are valid")
+            
+            # Validate z_threshold
+            z_threshold = statistical_config.get('z_threshold', 3.0)
+            if not isinstance(z_threshold, (int, float)) or z_threshold <= 0:
+                self._add_result('errors', check_name, f"Invalid z_threshold: {z_threshold}. Must be positive number")
+            else:
+                self._add_result('passed', check_name, f"Z-threshold is valid: {z_threshold}")
+            
+            # Validate methods
+            methods = statistical_config.get('methods', [])
+            valid_methods = ['iqr', 'zscore']
+            invalid_methods = [method for method in methods if method not in valid_methods]
+            
+            if invalid_methods:
+                self._add_result('errors', check_name, f"Invalid statistical methods: {invalid_methods}. Valid methods: {valid_methods}")
+            else:
+                self._add_result('passed', check_name, f"Statistical methods are valid: {methods}")
+                
+        except Exception as e:
+            self._add_result('errors', check_name, f"Error validating statistical methods configuration: {e}")
     
     def _validate_comparison_configuration(self) -> None:
-        """Validate comparison configuration"""
+        """Validate comparison configuration - updated for light transform compatibility"""
         check_name = "comparison_configuration"
         
         try:
             comparison_config = self.config.get_comparison_config()
-            column_mapping = self.config.get_column_mapping()
+            column_mapping = self.config.get_light_transform_column_mapping()
             
-            # Validate comparison columns exist in mapping
+            # Validate comparison columns exist in light transform mapping
             comparison_columns = comparison_config.get('comparison_columns', [])
             missing_columns = []
             
@@ -408,9 +729,9 @@ class ConfigValidator:
                     missing_columns.append(col)
             
             if missing_columns:
-                self._add_result('errors', check_name, f"Comparison columns not in mapping: {missing_columns}")
+                self._add_result('errors', check_name, f"Comparison columns not in light_transform.column_mapping: {missing_columns}")
             else:
-                self._add_result('passed', check_name, f"All {len(comparison_columns)} comparison columns are mapped")
+                self._add_result('passed', check_name, f"All {len(comparison_columns)} comparison columns are mapped in light_transform")
             
             # Validate float tolerance
             float_tolerance = comparison_config.get('float_tolerance', 0.001)
@@ -419,16 +740,20 @@ class ConfigValidator:
             else:
                 self._add_result('passed', check_name, f"Float tolerance is valid: {float_tolerance}")
             
-            # Check fuzzy matching configuration
-            fuzzy_config = comparison_config.get('fuzzy_matching', {})
-            if fuzzy_config.get('enabled', False):
-                self._add_result('warnings', check_name, "Fuzzy matching is enabled but may not be implemented")
-            else:
-                self._add_result('passed', check_name, "Fuzzy matching is disabled as expected")
+            # Check statistical comparisons configuration
+            include_statistical = comparison_config.get('include_statistical_comparisons', True)
+            statistical_enabled = self.config.get_statistical_methods_config().get('enabled', True)
             
+            if include_statistical and not statistical_enabled:
+                self._add_result('warnings', check_name, "Statistical comparisons enabled but statistical methods are disabled")
+            elif include_statistical and statistical_enabled:
+                self._add_result('passed', check_name, "Statistical comparisons configuration is consistent")
+            else:
+                self._add_result('passed', check_name, "Statistical comparisons are disabled")
+                
         except Exception as e:
             self._add_result('errors', check_name, f"Error validating comparison configuration: {e}")
-    
+
     def _validate_cross_dependencies(self) -> None:
         """Validate cross-dependencies between configuration sections"""
         check_name = "cross_dependencies"
@@ -522,7 +847,7 @@ class ConfigValidator:
         
     def get_recommendations(self) -> List[str]:
         """
-        Get recommendations for improving configuration
+        Get recommendations for improving configuration - updated for light transform
         
         Returns:
             List of recommendation strings
@@ -532,38 +857,54 @@ class ConfigValidator:
         # Analyse validation results for recommendations
         warnings = self.validation_results.get('warnings', [])
         
-        # Check for common issues and suggest improvements
-        if any('Excel files' in w['message'] for w in warnings):
-            recommendations.append("Consider adding sample Excel files to input folders for testing")
+        # Check for common light transform issues and suggest improvements
+        if any('light_transform' in w['message'].lower() for w in warnings):
+            recommendations.append("Review light transform configuration warnings to ensure optimal data processing")
+        
+        if any('legacy' in w['message'].lower() for w in warnings):
+            recommendations.append("Consider migrating legacy configuration sections to the new light_transform structure")
+        
+        if any('column_mapping_variants' in w['message'] for w in warnings):
+            recommendations.append("Remove deprecated column_mapping_variants from configuration - this feature is no longer supported")
         
         if any('validation rules' in w['message'] for w in warnings):
-            recommendations.append("Add validation rules for all critical columns to improve data quality checking")
+            recommendations.append("Add validation rules for all critical columns in light_transform to improve data quality checking")
         
-        if any('folder name contains spaces' in w['message'] for w in warnings):
-            recommendations.append("Use underscore-separated folder names instead of spaces for better compatibility")
+        if any('esi' in w['message'].lower() for w in warnings):
+            recommendations.append("Ensure all expected ESI field mappings are present for comprehensive field normalisation")
         
-        if any('log file' in w['message'] for w in warnings):
-            recommendations.append("Ensure log file directory is writable or disable file logging")
+        if any('duplicate' in w['message'].lower() for w in warnings):
+            recommendations.append("Include key identifying fields (name, esi_field) in duplicate check columns")
         
-        # Suggest optimizations based on configuration
+        # Statistical configuration recommendations
+        statistical_config = self.config.get_statistical_methods_config()
+        if statistical_config.get('enabled', True):
+            fields_count = len(statistical_config.get('fields_to_analyse', []))
+            if fields_count < 3:
+                recommendations.append("Consider analysing more numeric fields in statistical methods for comprehensive outlier detection")
+        
+        # Performance recommendations
+        light_transform_config = self.config.get_light_transform_config()
+        validation_config = light_transform_config.get('validation', {})
+        max_time = validation_config.get('max_processing_time_seconds', 30)
+        
+        if max_time > 60:
+            recommendations.append("Consider reducing max processing time threshold for faster pipeline failure detection")
+        
+        # General configuration recommendations
         sheets_count = len(self.config.get_sheets_to_process())
         if sheets_count > 2:
-            recommendations.append("Consider processing sheets in parallel for better performance with many sheets")
+            recommendations.append("With multiple sheets, ensure light transform configuration covers all expected data variations")
         
-        validation_rules_count = len(self.config.get_validation_rules())
-        if validation_rules_count < 3:
-            recommendations.append("Add more validation rules to catch data quality issues early")
-        
-        # Database recommendations
-        db_path = self.config.get_database_path()
-        if not db_path.startswith('/tmp') and not db_path.startswith('./'):
-            recommendations.append("Consider using relative paths for database to improve portability")
+        column_mappings_count = len(self.config.get_light_transform_column_mapping())
+        if column_mappings_count < 5:
+            recommendations.append("Ensure all expected columns are mapped in light_transform.column_mapping")
         
         return recommendations
     
     def generate_validation_report(self) -> str:
         """
-        Generate a human-readable validation report
+        Generate a human-readable validation report - updated for light transform
         
         Returns:
             Formatted validation report string
@@ -571,16 +912,16 @@ class ConfigValidator:
         results = self.validate_all()
         
         report = []
-        report.append("=" * 60)
-        report.append("CONFIGURATION VALIDATION REPORT")
-        report.append("=" * 60)
+        report.append("=" * 70)
+        report.append("CONFIGURATION VALIDATION REPORT - LIGHT TRANSFORM")
+        report.append("=" * 70)
         report.append("")
         
         # Summary
         if results['is_valid']:
-            report.append("✅ CONFIGURATION IS VALID")
+            report.append("Configuration is VALID for light transform pipeline")
         else:
-            report.append("❌ CONFIGURATION HAS ERRORS")
+            report.append("Configuration has ERRORS - light transform pipeline may fail")
         
         report.append(f"   Total checks: {results['total_checks']}")
         report.append(f"   Passed: {results['passed']}")
@@ -590,34 +931,36 @@ class ConfigValidator:
         
         # Errors
         if results['details']['errors']:
-            report.append("🚨 ERRORS (must be fixed):")
+            report.append("ERRORS (must be fixed):")
             for error in results['details']['errors']:
-                report.append(f"   ❌ {error['check']}: {error['message']}")
+                report.append(f"   - {error['check']}: {error['message']}")
             report.append("")
         
         # Warnings
         if results['details']['warnings']:
-            report.append("⚠️  WARNINGS (should be reviewed):")
+            report.append("WARNINGS (should be reviewed):")
             for warning in results['details']['warnings']:
-                report.append(f"   ⚠️  {warning['check']}: {warning['message']}")
+                report.append(f"   - {warning['check']}: {warning['message']}")
             report.append("")
+        
+        # Light transform specific summary
+        config_summary = self.config.get_config_summary()
+        report.append("LIGHT TRANSFORM CONFIGURATION SUMMARY:")
+        report.append(f"   Column mappings: {config_summary.get('column_mappings_count', 0)}")
+        report.append(f"   ESI normalisation: {'Enabled' if config_summary.get('esi_normalisation_enabled', False) else 'Disabled'}")
+        report.append(f"   Duplicate removal: {'Enabled' if config_summary.get('duplicate_removal_enabled', False) else 'Disabled'}")
+        report.append(f"   Statistical methods: {'Enabled' if config_summary.get('statistical_methods_enabled', False) else 'Disabled'}")
+        report.append("")
         
         # Recommendations
         recommendations = self.get_recommendations()
         if recommendations:
-            report.append("💡 RECOMMENDATIONS:")
+            report.append("RECOMMENDATIONS:")
             for i, rec in enumerate(recommendations, 1):
                 report.append(f"   {i}. {rec}")
             report.append("")
         
-        # Configuration summary
-        config_summary = self.config.get_config_summary()
-        report.append("📋 CONFIGURATION SUMMARY:")
-        for key, value in config_summary.items():
-            report.append(f"   {key}: {value}")
-        
-        report.append("")
-        report.append("=" * 60)
+        report.append("=" * 70)
         
         return "\n".join(report)
 

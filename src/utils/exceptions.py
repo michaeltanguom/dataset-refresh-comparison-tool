@@ -53,6 +53,12 @@ class DataQualityError(DatasetComparisonError):
         self.table_name = table_name
         self.affected_rows = affected_rows
 
+class StatisticalAnalysisError(DatasetComparisonError):
+    """Raised when statistical analysis operations fail"""
+    def __init__(self, message: str, table_name: str = None, field_name: str = None):
+        super().__init__(message)
+        self.table_name = table_name
+        self.field_name = field_name
 
 class ComparisonError(DatasetComparisonError):
     """Raised when comparison logic fails"""

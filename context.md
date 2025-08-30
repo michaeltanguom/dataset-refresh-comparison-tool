@@ -61,24 +61,23 @@ tests/
 │   │   └── test_light_transform.py
 │   ├── test_load/                # Loading module tests
 │   │   └── test_load_duckdb.py
-│   ├── test_transform/           # Transformation module tests
+│   ├── test_transform/           # Transformation module tests -- missing...
 │   │   ├── test_clean_duckdb_tables.py
 │   │   └── test_compare_datasets.py
-│   ├── test_html_generator/      # HTML generation tests
+│   ├── test_html_generator/      # HTML generation tests -- missing...
 │   │   ├── test_templates/
 │   │   └── test_renderers/
 │   └── test_utils/               # Utility module tests
 │       ├── test_common.py
 │       ├── test_database_manager.py
 │       └── test_exceptions.py
-├── component/                    # Component integration tests
+├── component/                    # Component integration tests based on Prefect
 │   ├── test_etl_integration.py
 │   └── test_html_pipeline.py
 └── integration/                  # End-to-end tests
     └── test_full_pipeline.py
 
 Unit tests left to create:
-test_load
 test_html_generator
 component
 integration

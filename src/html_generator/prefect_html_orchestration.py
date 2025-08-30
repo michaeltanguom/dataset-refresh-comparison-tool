@@ -33,7 +33,7 @@ from src.utils.exceptions import HtmlGenerationError
 def extract_and_aggregate_json_reports_task(config_path: str) -> Dict[str, Any]:
     """Extract and aggregate all JSON comparison reports for unified dashboard"""
     logger = get_run_logger()
-    logger.info("🔄 Extracting and aggregating JSON comparison reports for unified dashboard")
+    logger.info("Extracting and aggregating JSON comparison reports for unified dashboard")
     
     task_start_time = time.time()
     
@@ -43,12 +43,12 @@ def extract_and_aggregate_json_reports_task(config_path: str) -> Dict[str, Any]:
         
         # Get HTML config path
         html_config_info = config.get_html_generation_config()
-        html_config_path = html_config_info.get('config_path', 'config/html_generator_config.yaml')
+        html_config_path = html_config_info.get('config_path', 'html_generator_config.yaml')
         
         # Convert relative path to absolute if needed
-        if not Path(html_config_path).is_absolute():
-            main_config_dir = Path(config_path).parent
-            html_config_path = str(main_config_dir / html_config_path)
+        #if not Path(html_config_path).is_absolute():
+        #    main_config_dir = Path(config_path).parent
+        #    html_config_path = str(main_config_dir / html_config_path)
         
         logger.info(f"Loading HTML config from: {html_config_path}")
         
@@ -87,14 +87,14 @@ def extract_and_aggregate_json_reports_task(config_path: str) -> Dict[str, Any]:
             }
         }
         
-        logger.info(f"✅ Extracted {results['total_reports_extracted']} JSON reports and grouped into {len(grouped_reports)} dataset types in {task_duration:.2f}s")
+        logger.info(f"Extracted {results['total_reports_extracted']} JSON reports and grouped into {len(grouped_reports)} dataset types in {task_duration:.2f}s")
         for dataset_type, reports in grouped_reports.items():
             logger.info(f"  - {dataset_type}: {len(reports)} subject reports")
         
         return results
         
     except Exception as e:
-        logger.error(f"❌ JSON extraction and aggregation failed: {e}")
+        logger.error(f"JSON extraction and aggregation failed: {e}")
         raise HtmlGenerationError(f"JSON extraction and aggregation failed: {e}")
 
 
@@ -142,7 +142,7 @@ def _extract_subject_name(comparison_id: str) -> str:
 def generate_unified_html_dashboards_task(config_path: str, aggregation_results: Dict[str, Any]) -> Dict[str, Any]:
     """Generate unified HTML dashboards from aggregated JSON reports"""
     logger = get_run_logger()
-    logger.info("🔄 Generating unified HTML dashboards")
+    logger.info("Generating unified HTML dashboards")
     
     task_start_time = time.time()
     
@@ -150,7 +150,7 @@ def generate_unified_html_dashboards_task(config_path: str, aggregation_results:
         # Get HTML config from aggregation results
         html_config = aggregation_results['html_config']
         
-        # Initialize components
+        # Initialise components
         template_factory = TemplateFactory()
         html_renderer = HtmlRenderer(html_config)
         
@@ -187,12 +187,12 @@ def generate_unified_html_dashboards_task(config_path: str, aggregation_results:
                 generated_files[dataset_type] = file_path
                 
                 successful_generations += 1
-                logger.info(f"✅ Generated unified dashboard for {dataset_type}")
+                logger.info(f"Generated unified dashboard for {dataset_type}")
                 logger.info(f"  - File: {file_path}")
                 logger.info(f"  - Subjects covered: {len(reports_data)}")
                 
             except Exception as e:
-                logger.error(f"❌ Failed to generate unified dashboard for {dataset_type}: {e}")
+                logger.error(f"Failed to generate unified dashboard for {dataset_type}: {e}")
                 failed_generations += 1
                 continue
         
@@ -208,11 +208,11 @@ def generate_unified_html_dashboards_task(config_path: str, aggregation_results:
             }
         }
         
-        logger.info(f"✅ Generated {successful_generations} unified dashboards in {task_duration:.2f}s")
+        logger.info(f"Generated {successful_generations} unified dashboards in {task_duration:.2f}s")
         return results
         
     except Exception as e:
-        logger.error(f"❌ Unified HTML generation failed: {e}")
+        logger.error(f"Unified HTML generation failed: {e}")
         raise HtmlGenerationError(f"Unified HTML generation failed: {e}")
 
 
@@ -244,7 +244,7 @@ def _generate_dashboard_title(dataset_type: str, subject_count: int) -> str:
 def unified_html_generation_flow(config_path: str) -> Dict[str, Any]:
     """Unified HTML generation flow - replicating html_report_generator.py logic"""
     logger = get_run_logger()
-    logger.info("🚀 Starting Unified HTML Dashboard Generation")
+    logger.info("Starting Unified HTML Dashboard Generation")
     
     try:
         # Step 1: Extract and aggregate JSON reports by dataset type
@@ -281,13 +281,13 @@ def unified_html_generation_flow(config_path: str) -> Dict[str, Any]:
             }
         }
         
-        logger.info("🎉 Unified HTML generation completed successfully!")
-        logger.info(f"📊 Generated {summary['dashboards_generated']} unified dashboards")
+        logger.info("Unified HTML generation completed successfully!")
+        logger.info(f"Generated {summary['dashboards_generated']} unified dashboards")
         
         return summary
         
     except Exception as e:
-        logger.error(f"💥 Unified HTML generation failed: {e}")
+        logger.error(f"Unified HTML generation failed: {e}")
         return {
             'pipeline_status': 'FAILED',
             'error': str(e),
@@ -309,12 +309,12 @@ def main():
         result = unified_html_generation_flow(args.config)
         
         if result['pipeline_status'] == 'SUCCESS':
-            print(f"✅ Generated {result['dashboards_generated']} unified dashboards")  # ← Updated key
-            print(f"📊 Processed {result['individual_reports_processed']} individual reports")
-            print(f"⏰ Duration: {result['total_execution_time_seconds']:.2f}s")
+            print(f"Generated {result['dashboards_generated']} unified dashboards")  # ← Updated key
+            print(f"Processed {result['individual_reports_processed']} individual reports")
+            print(f"Duration: {result['total_execution_time_seconds']:.2f}s")
             return 0
         else:
-            print(f"❌ Failed: {result.get('error', 'Unknown error')}")
+            print(f"Failed: {result.get('error', 'Unknown error')}")
             return 1
     
     return 0

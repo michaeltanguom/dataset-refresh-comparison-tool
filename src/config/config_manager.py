@@ -179,14 +179,6 @@ class ConfigManager:
         """Get list of sheet names to process"""
         return self.config['sheets_to_process']
     
-    def get_column_mapping(self) -> Dict[str, str]:
-        """Get column mapping configuration"""
-        return self.config['column_mapping']
-    
-    def get_column_mapping_variants(self) -> Dict[str, List[str]]:
-        """Get column mapping variants (for handling spelling differences)"""
-        return self.config.get('column_mapping_variants', {})
-    
     def get_critical_columns(self) -> List[str]:
         """Get list of critical columns for validation"""
         return self.config['critical_columns']
@@ -320,11 +312,13 @@ class ConfigManager:
     
     def get_config_summary(self) -> Dict[str, Any]:
         """
-        Get summary of configuration for logging/debugging
+        Get summary of configuration for logging/debugging - updated for new structure
         
         Returns:
             Summary dictionary
         """
+        light_transform_config = self.get_light_transform_config()
+        
         return {
             'config_file': str(self.config_path),
             'dataset_1_folder': self.get_data_source_config('dataset_1')['folder'],
@@ -332,43 +326,166 @@ class ConfigManager:
             'database_path': self.get_database_path(),
             'sheets_to_process': self.get_sheets_to_process(),
             'critical_columns_count': len(self.get_critical_columns()),
-            'column_mappings_count': len(self.get_column_mapping()),
+            'column_mappings_count': len(self.get_light_transform_column_mapping()),
             'validation_rules_count': len(self.get_validation_rules()),
             'output_folder': self.get_output_config()['reports_folder'],
             'schema_folder': self.get_schema_config()['schema_folder'],
-            'default_schema': self.get_schema_config()['default_schema']
+            'default_schema': self.get_schema_config()['default_schema'],
+            'light_transform_enabled': light_transform_config.get('validation', {}).get('enabled', True),
+            'esi_normalisation_enabled': light_transform_config.get('esi_normalisation', {}).get('enabled', True),
+            'duplicate_removal_enabled': light_transform_config.get('duplicate_removal', {}).get('enabled', True),
+            'statistical_methods_enabled': self.get_statistical_methods_config().get('enabled', True)
         }
     
+    def get_statistical_methods_config(self) -> Dict[str, Any]:
+        """Get statistical methods configuration"""
+        return self.config.get('statistical_methods', {
+            'enabled': True,
+            'z_threshold': 3.0,
+            'methods': ['iqr', 'zscore'],
+            'append_to_schema': True,
+            'compute_percentiles': True,
+            'fields_to_analyse': [
+                'times_cited', 
+                'highly_cited_papers', 
+                'hot_papers', 
+                'indicative_cross_field_score'
+            ],
+            'validation_enabled': True
+        })
+
+    def get_light_transform_config(self) -> Dict[str, Any]:
+        """Get light transform configuration"""
+        return self.config.get('light_transform', {
+            'column_mapping': {},
+            'esi_normalisation': {
+                'enabled': True,
+                'canonical_mappings': {},
+                'unknown_field_strategy': 'keep_original',
+                'default_field': 'Unknown'
+            },
+            'duplicate_removal': {
+                'enabled': True,
+                'duplicate_check_columns': ['name', 'esi_field'],
+                'strategy': 'keep_first',
+                'case_sensitive_matching': False
+            },
+            'null_handling': {
+                'strategy': 'fail',
+                'default_values': {},
+                'critical_fields_never_null': ['name', 'esi_field']
+            },
+            'validation': {
+                'enabled': True,
+                'fail_on_validation_error': True,
+                'checks': [
+                    'check_required_columns',
+                    'check_data_types',
+                    'check_value_ranges',
+                    'check_null_constraints',
+                    'check_duplicate_constraints'
+                ],
+                'max_processing_time_seconds': 30,
+                'max_memory_usage_mb': 500
+            }
+        })
+
+    def get_light_transform_column_mapping(self) -> Dict[str, str]:
+        """Get column mapping from light transform configuration"""
+        light_transform_config = self.get_light_transform_config()
+        column_mapping = light_transform_config.get('column_mapping', {})
+        
+        return column_mapping
+    
+    def get_column_mapping(self) -> Dict[str, str]:
+        """Get column mapping configuration - updated to use light_transform section"""
+        return self.get_light_transform_column_mapping()
+
+    def get_esi_normalisation_config(self) -> Dict[str, Any]:
+        """Get ESI normalisation configuration from light transform section"""
+        light_transform_config = self.get_light_transform_config()
+        return light_transform_config.get('esi_normalisation', {
+            'enabled': True,
+            'canonical_mappings': {},
+            'unknown_field_strategy': 'keep_original',
+            'default_field': 'Unknown'
+        })
+
+    def get_duplicate_removal_config(self) -> Dict[str, Any]:
+        """Get duplicate removal configuration from light transform section"""
+        light_transform_config = self.get_light_transform_config()
+        duplicate_config = light_transform_config.get('duplicate_removal', {
+            'enabled': True,
+            'duplicate_check_columns': ['name', 'esi_field'],
+            'strategy': 'keep_first',
+            'case_sensitive_matching': False
+        })
+        
+        return duplicate_config
+
+    def get_null_handling_config(self) -> Dict[str, Any]:
+        """Get NULL handling configuration from light transform section"""
+        light_transform_config = self.get_light_transform_config()
+        return light_transform_config.get('null_handling', {
+            'strategy': 'fail',
+            'default_values': {},
+            'critical_fields_never_null': ['name', 'esi_field']
+        })
+
+    def get_light_transform_validation_config(self) -> Dict[str, Any]:
+        """Get light transform validation configuration"""
+        light_transform_config = self.get_light_transform_config()
+        return light_transform_config.get('validation', {
+            'enabled': True,
+            'fail_on_validation_error': True,
+            'checks': [
+                'check_required_columns',
+                'check_data_types',
+                'check_value_ranges',
+                'check_null_constraints',
+                'check_duplicate_constraints'
+            ],
+            'max_processing_time_seconds': 30,
+            'max_memory_usage_mb': 500
+        })
+
     def get_html_generation_config(self) -> Dict[str, Any]:
         """Get HTML generation configuration"""
-        return self.config.get('html_generation', {
-            'enabled': False,
-            'config_path': 'config/html_generator_config.yaml',
-            'auto_generate': False
-        })
+        html_config = self.config.get('html_generation', {})
+        
+        return {
+            'enabled': html_config.get('enabled', False),
+            'config_path': html_config.get('config_path'),
+            'auto_generate': html_config.get('auto_generate', False)
+        }
 
     def load_html_config(self, html_config_path: str) -> Dict[str, Any]:
         """
         Load HTML generator specific configuration
         
         Args:
-            html_config_path: Path to HTML config file
+            html_config_path: Path to HTML config file (relative to main config file)
             
         Returns:
             HTML configuration dictionary
         """
         try:
-            html_config_file = Path(html_config_path)
+            # Make the path relative to the main config file's directory
+            config_dir = self.config_path.parent
+            html_config_file = config_dir / html_config_path
             
             if not html_config_file.exists():
+                logger.warning(f"HTML config file not found at {html_config_file}, using defaults")
                 return self._get_default_html_config()
             
             with open(html_config_file, 'r', encoding='utf-8') as f:
                 html_config = yaml.safe_load(f)
             
+            logger.info(f"Loaded HTML config from {html_config_file}")
             return html_config
             
         except Exception as e:
+            logger.error(f"Failed to load HTML config from {html_config_path}: {e}")
             return self._get_default_html_config()
 
     def _get_default_html_config(self) -> Dict[str, Any]:

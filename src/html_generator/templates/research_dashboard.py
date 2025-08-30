@@ -1042,16 +1042,18 @@ class ResearchDashboardTemplate(BaseTemplate):
         <div class="metrics-grid">
             <div class="metric-card">
                 <div class="metric-value">{stats['total_researchers_july']:,}</div>
-                <div class="metric-label">Total Researchers (July)</div>
+                <div class="metric-label">Total Unique Researchers Count (July)</div>
             </div>
             <div class="metric-card">
                 <div class="metric-value">{stats['retention_rate']:.1f}%</div>
                 <div class="metric-label">Highly Cited Paper Overlap Rate</div>
             </div>
+            <!-- 
             <div class="metric-card">
                 <div class="metric-value">{stats['change_rate']:.1f}%</div>
                 <div class="metric-label">Change Rate</div>
             </div>
+            -->
             <div class="metric-card">
                 <div class="metric-value">{cross_field_count}</div>
                 <div class="metric-label">Cross-Field Researchers</div>

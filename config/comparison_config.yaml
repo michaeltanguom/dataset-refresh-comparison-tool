@@ -1,59 +1,129 @@
 # Dataset Comparison Tool Configuration
 # This file controls all aspects of the comparison pipeline
 
-# Data source configuration
+## Data source configuration
 data_sources:
   dataset_1:
-    folder: "Feb2025"     # Path to first dataset folder
-    period_name: "feb"          # Identifier for first time period
+    folder: "Feb2025"
+    period_name: "feb"
   dataset_2:
-    folder: "July2025"     # Path to second dataset folder  
-    period_name: "july"         # Identifier for second time period
+    folder: "July2025"
+    period_name: "july"
 
 # Database configuration
 database:
-  path: "hcr_comparison.db"     # DuckDB database file path
+  path: "hcr_comparison.db"
   
 # Schema configuration
 schema:
-  schema_folder: "schema"       # Folder containing SQL schema files
-  default_schema: "hcr_default" # Default schema name to use
-  schema_mapping:               # Map sheet types to specific schemas
+  schema_folder: "schema"
+  default_schema: "hcr_default"
+  schema_mapping:
     highly_cited_only: "hcr_default"
     incites_researchers: "hcr_default"
-    # Future: could have different schemas for different data types
-    # json_dataset: "json_schema"
-    # csv_dataset: "csv_schema"
   
 # Sheets to process from Excel files
 sheets_to_process:
   - "Highly Cited only"
   - "Incites Researchers"
 
-# Column mapping from Excel columns to normalised names
-# Normalised name: "original name"
-column_mapping:
-  name: "Name"
-  percent_docs_cited: "% Docs Cited"
-  web_of_science_documents: "Web of Science Documents"
-  rank: "Rank"
-  times_cited: "Times Cited"
-  affiliation: "Affiliation"
-  web_of_science_researcherid: "Web of Science ResearcherID"
-  category_normalised_citation_impact: "Category Normalized Citation Impact"
-  orcid: "ORCID"
-  highly_cited_papers: "Highly Cited Papers"
-  hot_papers: "Hot Papers"
-  esi_field: "ESI Field"
-  indicative_cross_field_score: "Indicative Cross-Field Score"
+# NEW: Light Transform Configuration Section
+light_transform:
+  # Column mapping configuration (moved from root level)
+  column_mapping:
+    name: "Name"
+    percent_docs_cited: "% Docs Cited"
+    web_of_science_documents: "Web of Science Documents"
+    rank: "Rank"
+    times_cited: "Times Cited"
+    affiliation: "Affiliation"
+    web_of_science_researcherid: "Web of Science ResearcherID"
+    category_normalised_citation_impact: "Category Normalized Citation Impact"
+    orcid: "ORCID"
+    highly_cited_papers: "Highly Cited Papers"
+    hot_papers: "Hot Papers"
+    esi_field: "ESI Field"
+    indicative_cross_field_score: "Indicative Cross-Field Score"
+  
+  # ESI field normalisation configuration
+  esi_normalisation:
+    enabled: true
+    canonical_mappings:
+      'agricultural sciences': 'Agricultural Sciences'
+      'biology_biochemistry': 'Biology Biochemistry'
+      'chemistry': 'Chemistry'
+      'clinical medicine': 'Clinical Medicine'
+      'computer science': 'Computer Science'
+      'economics and business': 'Economics and Business'
+      'engineering': 'Engineering'
+      'environment_ecology': 'Environment Ecology'
+      'geosciences': 'GeoSciences'
+      'immunology': 'Immunology'
+      'materials science': 'Materials Science'
+      'microbiology': 'Microbiology'
+      'molecular biology and genetics': 'Molecular Biology and Genetics'
+      'neuroscience and behaviour': 'Neuroscience and Behaviour'
+      'pharmacology and toxicology': 'Pharmacology and Toxicology'
+      'physics': 'Physics'
+      'plant and animal science': 'Plant and Animal Science'
+      'psychiatry_psychology': 'Psychiatry Psychology'
+      'social sciences': 'Social Sciences'
+      'space science': 'Space Science'
+    
+    # Options for handling unknown ESI fields
+    unknown_field_strategy: "keep_original"  # "keep_original", "flag_error", "use_default"
+    default_field: "Unknown"
+  
+  # Duplicate removal configuration (moved from data_cleaning)
+  duplicate_removal:
+    enabled: true
+    duplicate_check_columns:
+      - "name"
+      - "esi_field"
+    strategy: "keep_first"  # "keep_first", "keep_last", "flag_all"
+    case_sensitive_matching: false
+    
+  # NULL value handling configuration
+  null_handling:
+    strategy: "fail"  # "fail", "skip", "default", "interpolate"
+    
+    # Default values to use when strategy is "default"
+    default_values:
+      percent_docs_cited: 0.0
+      web_of_science_documents: 0
+      rank: 0
+      times_cited: 0
+      affiliation: "Unknown"
+      web_of_science_researcherid: ""
+      category_normalised_citation_impact: 0.0
+      orcid: ""
+      highly_cited_papers: 0
+      hot_papers: 0
+      indicative_cross_field_score: 0.0
+    
+    # Critical fields that should never be NULL (regardless of strategy)
+    critical_fields_never_null:
+      - "name"
+      - "esi_field"
+  
+  # Validation configuration
+  validation:
+    enabled: true
+    fail_on_validation_error: true
+    
+    # Validation checks to perform
+    checks:
+      - "check_required_columns"
+      - "check_data_types" 
+      - "check_value_ranges"
+      - "check_null_constraints"
+      - "check_duplicate_constraints"
+    
+    # Performance validation
+    max_processing_time_seconds: 30
+    max_memory_usage_mb: 500
 
-# Column mapping variants (handles spelling differences)
-column_mapping_variants:
-  category_normalised_citation_impact:
-    - "Category Normalized Citation Impact"
-    - "Category Normalised Citation Impact"
-
-# Critical columns required for pipeline to run
+# Critical columns required for pipeline to run (references light_transform.column_mapping keys)
 critical_columns:
   - "name"
   - "times_cited"
@@ -62,7 +132,7 @@ critical_columns:
   - "indicative_cross_field_score"
   - "esi_field"
 
-# Validation rules for data quality checking
+# Validation rules for data quality checking (references light_transform.column_mapping keys)
 validation_rules:
   times_cited:
     min: 50
@@ -94,58 +164,55 @@ validation_rules:
 # Output configuration
 output:
   reports_folder: "comparison_reports"
-  
-  # Optional custom folder names for each sheet type
-  # If not specified, uses normalised sheet names
   folder_names:
     highly_cited_only: "highly_cited_only"
     incites_researchers: "incites_researchers"
 
-# Dataframe naming configuration for Et phase
+# Dataframe naming configuration
 table_naming:
   prefix: "df"
 
-# Data cleaning configuration
-data_cleaning:
-  remove_duplicates: true
-  duplicate_check_columns:
-    - "name"
-    - "esi_field"
-  
-  handle_nulls:
-    strategy: "fail"  # Options: "fail", "skip", "default"
-    
-  outlier_detection:
-    enabled: true
-    methods:
-      - "iqr"      # Interquartile range
-      - "zscore"   # Z-score based
-    z_threshold: 3
-    
-# Comparison configuration  
+# Statistical Methods Configuration
+statistical_methods:
+  enabled: true
+  z_threshold: 3.0
+  methods:
+    - "iqr"
+    - "zscore"
+  append_to_schema: true
+  compute_percentiles: true
+  fields_to_analyse:
+    - "times_cited"
+    - "highly_cited_papers" 
+    - "hot_papers"
+    - "indicative_cross_field_score"
+  validation_enabled: true
+  outlier_severity_thresholds:
+    extreme: 3.0
+    high: 2.0
+    moderate: 1.5
+  performance_logging: true
+
+# Comparison configuration
 comparison:
-  # Columns to compare for changes
   comparison_columns:
     - "highly_cited_papers"
     - "indicative_cross_field_score"
     - "hot_papers"
     - "times_cited"
-  
-  # Tolerance for floating point comparisons
   float_tolerance: 0.001
-  
-  # Include unchanged researchers in output
   include_unchanged: true
-    
+  include_statistical_comparisons: true
+
 # HTML Generator system    
 html_generation:
   enabled: true
-  config_path: "html_generator_config.yaml"  # Relative to config directory
+  config_path: "html_generator_config.yaml"
   auto_generate: true
 
 # Logging configuration
 logging:
-  level: "INFO"           # DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   log_to_file: true
   log_file_path: "comparison_pipeline.log"

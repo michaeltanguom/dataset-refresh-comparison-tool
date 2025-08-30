@@ -39,7 +39,7 @@ from src.transform.compare_datasets import DataComparator
 # Utilities
 from src.utils.exceptions import (
     ConfigurationError, ExtractionError, NormalisationError, 
-    DatabaseError, DataQualityError, ComparisonError, PipelineError, HtmlGenerationError
+    DatabaseError, DataQualityError, ComparisonError, PipelineError, HtmlGenerationError, StatisticalAnalysisError
 )
 from src.utils.logging_config import setup_logging, get_logger
 
@@ -128,7 +128,7 @@ def validate_pipeline_configuration(config_path: str) -> Dict[str, Any]:
             error_details = validation_results['details']['errors']
             raise ConfigurationError(f"Configuration validation failed: {error_details}")
         
-        logger.info("✅ Configuration validation passed")
+        logger.info("Configuration validation passed")
         return {
             'status': 'valid',
             'config_summary': config.get_config_summary(),
@@ -136,7 +136,7 @@ def validate_pipeline_configuration(config_path: str) -> Dict[str, Any]:
         }
         
     except Exception as e:
-        logger.error(f"❌ Configuration validation failed: {e}")
+        logger.error(f"Configuration validation failed: {e}")
         raise
 
 
@@ -149,7 +149,7 @@ def validate_pipeline_configuration(config_path: str) -> Dict[str, Any]:
 def extract_datasets_task(config_path: str) -> Dict[str, Any]:
     """Prefect task for data extraction with proper timing"""
     logger = get_run_logger()
-    logger.info("🔄 Starting data extraction with refactored modules")
+    logger.info("Starting data extraction with refactored modules")
     
     # 🔧 FIX: Add timing at task level
     task_start_time = time.time()
@@ -192,11 +192,11 @@ def extract_datasets_task(config_path: str) -> Dict[str, Any]:
             }
         }
         
-        logger.info(f"✅ Extraction completed: {total_datasets} datasets, {total_rows:,} rows in {task_duration:.2f}s")
+        logger.info(f"Extraction completed: {total_datasets} datasets, {total_rows:,} rows in {task_duration:.2f}s")
         return extraction_results
         
     except Exception as e:
-        logger.error(f"❌ Data extraction failed: {e}")
+        logger.error(f"Data extraction failed: {e}")
         raise ExtractionError(f"Data extraction failed: {e}")
 
 @task(
@@ -211,7 +211,7 @@ def light_transform_dataframes_task(config_path: str, extraction_results: Dict[s
     Handles: column mapping + ESI field normalisation + validation
     """
     logger = get_run_logger()
-    logger.info("🔄 Starting light transformation: column mapping + ESI field normalisation")
+    logger.info("Starting light transformation: column mapping + ESI field normalisation")
     
     task_start_time = time.time()
     
@@ -240,17 +240,17 @@ def light_transform_dataframes_task(config_path: str, extraction_results: Dict[s
         }
         
         # Enhanced logging with ESI details
-        logger.info(f"✅ Light transformation completed: {transformation_results['transformed_datasets']} datasets in {task_duration:.2f}s")
-        logger.info(f"🔧 ESI fields normalised: {esi_summary['fields_normalised']} across {esi_summary['dataframes_processed']} DataFrames")
-        logger.info(f"📋 Canonical ESI fields available: {esi_summary['total_canonical_fields']}")
+        logger.info(f"Light transformation completed: {transformation_results['transformed_datasets']} datasets in {task_duration:.2f}s")
+        logger.info(f"ESI fields normalised: {esi_summary['fields_normalised']} across {esi_summary['dataframes_processed']} DataFrames")
+        logger.info(f"Canonical ESI fields available: {esi_summary['total_canonical_fields']}")
         
         if esi_summary['normalisation_errors'] > 0:
-            logger.warning(f"⚠️ ESI normalisation errors: {esi_summary['normalisation_errors']}")
+            logger.warning(f"ESI normalisation errors: {esi_summary['normalisation_errors']}")
         
         return transformation_results
         
     except Exception as e:
-        logger.error(f"❌ Light transformation failed: {e}")
+        logger.error(f"Light transformation failed: {e}")
         raise NormalisationError(f"Light transformation failed: {e}")
 
 @task(
@@ -264,7 +264,7 @@ def load_to_database_task(config_path: str, transformation_results: Dict[str, An
     FIXED: Load transformed data into DuckDB database
     """
     logger = get_run_logger()
-    logger.info("🔄 Starting database loading with transformed data")
+    logger.info("Starting database loading with transformed data")
     
     task_start_time = time.time()
     
@@ -304,12 +304,85 @@ def load_to_database_task(config_path: str, transformation_results: Dict[str, An
             }
         }
         
-        logger.info(f"✅ Database loading completed: {loading_results['tables_count']} tables, {loading_results['total_rows_loaded']:,} rows in {task_duration:.2f}s")
+        logger.info(f"Database loading completed: {loading_results['tables_count']} tables, {loading_results['total_rows_loaded']:,} rows in {task_duration:.2f}s")
         return loading_results
         
     except Exception as e:
-        logger.error(f"❌ Database loading failed: {e}")
+        logger.error(f"Database loading failed: {e}")
         raise DatabaseError(f"Database loading failed: {e}")
+
+@task(
+    name="statistical_analysis",
+    description="Perform statistical analysis on loaded database tables using SQL transformations",
+    retries=1,
+    retry_delay_seconds=30
+)
+def statistical_analysis_task(config_path: str, loading_results: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Prefect task for statistical analysis with SQL-based transformations
+    
+    Args:
+        config_path: Path to configuration file
+        loading_results: Results from load_to_database_task
+        
+    Returns:
+        Statistical analysis results
+    """
+    logger = get_run_logger()
+    logger.info("Starting statistical analysis using SQL transformations")
+    
+    task_start_time = time.time()
+    
+    try:
+        config = ConfigManager(config_path)
+        
+        # Import the statistical analyser
+        from src.transform.statistics.statistical_analyser import StatisticalAnalyser
+        
+        # Initialise analyser
+        analyser = StatisticalAnalyser(config)
+        
+        # Get tables to analyse
+        loaded_tables = loading_results['loaded_tables']
+        
+        # Perform statistical analysis
+        analysis_results = analyser.analyse_all_tables(loaded_tables)
+        
+        # Calculate task duration
+        task_duration = time.time() - task_start_time
+        
+        # Enhance results with task-level metrics
+        final_results = {
+            'analysis_status': analysis_results['analysis_status'],
+            'tables_processed': analysis_results['tables_processed'],
+            'tables_failed': analysis_results['tables_failed'], 
+            'total_records_enhanced': analysis_results['total_records_enhanced'],
+            'table_summaries': analysis_results['table_summaries'],
+            'statistical_columns_added': len(config.get_statistical_methods_config().get('fields_to_analyse', [])) * 3 + 1,  # 3 cols per field + severity
+            'performance_metrics': {
+                'statistical_analysis_duration': task_duration
+            },
+            'errors': analysis_results.get('errors', [])
+        }
+        
+        # Summary logging
+        if analysis_results['analysis_status'] == 'success':
+            logger.info(f"Statistical analysis completed successfully")
+            logger.info(f"  Tables enhanced: {final_results['tables_processed']}")
+            logger.info(f"  Records processed: {final_results['total_records_enhanced']:,}")
+            logger.info(f"  Duration: {task_duration:.2f}s")
+            logger.info(f"  Statistical columns added per table: {final_results['statistical_columns_added']}")
+        else:
+            logger.error(f"Statistical analysis failed or was skipped")
+            if final_results['errors']:
+                for error in final_results['errors']:
+                    logger.error(f"  Error: {error}")
+        
+        return final_results
+        
+    except Exception as e:
+        logger.error(f"Statistical analysis task failed: {e}")
+        raise StatisticalAnalysisError(f"Statistical analysis task failed: {e}")
 
 @task(
     name="clean_data",
@@ -320,9 +393,9 @@ def load_to_database_task(config_path: str, transformation_results: Dict[str, An
 def clean_data_task(config_path: str, loading_results: Dict[str, Any]) -> Dict[str, Any]:
     """Prefect task for data cleaning with proper timing"""
     logger = get_run_logger()
-    logger.info("🔄 Starting data cleaning with refactored modules")
+    logger.info("Starting data cleaning with refactored modules")
     
-    # 🔧 FIX: Add timing at task level
+    # FIX: Add timing at task level
     task_start_time = time.time()
     
     try:
@@ -335,7 +408,7 @@ def clean_data_task(config_path: str, loading_results: Dict[str, Any]) -> Dict[s
         # Get cleaning summary
         cleaning_summary = cleaner.get_cleaning_summary(cleaned_tables)
         
-        # 🔧 FIX: Calculate task-level timing
+        # FIX: Calculate task-level timing
         task_duration = time.time() - task_start_time
         
         cleaning_results = {
@@ -343,15 +416,15 @@ def clean_data_task(config_path: str, loading_results: Dict[str, Any]) -> Dict[s
             'tables_count': cleaning_summary['tables_processed'],
             'total_rows': cleaning_summary['total_rows'],
             'performance_metrics': {
-                'cleaning_duration': task_duration  # 🔧 FIX: Use task timing
+                'cleaning_duration': task_duration  # FIX: Use task timing
             }
         }
         
-        logger.info(f"✅ Data cleaning completed: {cleaning_results['tables_count']} tables, {cleaning_results['total_rows']:,} rows in {task_duration:.2f}s")
+        logger.info(f"Data cleaning completed: {cleaning_results['tables_count']} tables, {cleaning_results['total_rows']:,} rows in {task_duration:.2f}s")
         return cleaning_results
         
     except Exception as e:
-        logger.error(f"❌ Data cleaning failed: {e}")
+        logger.error(f"Data cleaning failed: {e}")
         raise DataQualityError(f"Data cleaning failed: {e}")
 
 @task(
@@ -363,9 +436,9 @@ def clean_data_task(config_path: str, loading_results: Dict[str, Any]) -> Dict[s
 def compare_datasets_task(config_path: str, cleaning_results: Dict[str, Any]) -> Dict[str, Any]:
     """Prefect task for dataset comparison with proper timing"""
     logger = get_run_logger()
-    logger.info("🔄 Starting dataset comparison with refactored modules")
+    logger.info("Starting dataset comparison with refactored modules")
     
-    # 🔧 FIX: Add timing at task level
+    # FIX: Add timing at task level
     task_start_time = time.time()
     
     try:
@@ -380,7 +453,7 @@ def compare_datasets_task(config_path: str, cleaning_results: Dict[str, Any]) ->
         # Save comparison reports
         saved_files = comparator.save_comparison_reports(comparison_results)
         
-        # 🔧 FIX: Calculate task-level timing
+        # FIX: Calculate task-level timing
         task_duration = time.time() - task_start_time
         
         final_results = {
@@ -389,17 +462,17 @@ def compare_datasets_task(config_path: str, cleaning_results: Dict[str, Any]) ->
             'failed_comparisons': comparison_results['summary']['failed_comparisons'],
             'saved_report_files': saved_files,
             'performance_metrics': {
-                'comparison_duration': task_duration  # 🔧 FIX: Use task timing
+                'comparison_duration': task_duration  # FIX: Use task timing
             }
         }
         
-        logger.info(f"✅ Dataset comparison completed: {final_results['successful_comparisons']} successful, {final_results['failed_comparisons']} failed in {task_duration:.2f}s")
-        logger.info(f"📁 Reports saved: {len(saved_files)} files")
+        logger.info(f"Dataset comparison completed: {final_results['successful_comparisons']} successful, {final_results['failed_comparisons']} failed in {task_duration:.2f}s")
+        logger.info(f"Reports saved: {len(saved_files)} files")
         
         return final_results
         
     except Exception as e:
-        logger.error(f"❌ Dataset comparison failed: {e}")
+        logger.error(f"Dataset comparison failed: {e}")
         raise ComparisonError(f"Dataset comparison failed: {e}")
 
 @task(
@@ -411,31 +484,30 @@ def generate_enhanced_pipeline_summary(config_path: str,
                                      extraction_results: Dict[str, Any],
                                      normalisation_results: Dict[str, Any],
                                      loading_results: Dict[str, Any],
-                                     cleaning_results: Dict[str, Any],
+                                     statistical_results: Dict[str, Any],  # NEW parameter
                                      comparison_results: Dict[str, Any],
                                      json_extraction_results: Optional[Dict[str, Any]] = None,
                                      html_generation_results: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
-    Generate comprehensive pipeline execution summary including HTML generation
+    Generate comprehensive pipeline execution summary including statistical analysis
     """
     logger = get_run_logger()
-    logger.info("📊 Generating enhanced pipeline execution summary")
+    logger.info("Generating enhanced pipeline execution summary with statistical analysis")
     
     try:
-        # Calculate total duration
+        # Calculate total duration including statistical analysis
         total_duration = (
             extraction_results['performance_metrics'].get('extraction_duration', 0) +
-            normalisation_results['performance_metrics'].get('normalisation_duration', 0) +
+            normalisation_results['performance_metrics'].get('transformation_duration', 0) +  # Updated key
             loading_results['performance_metrics'].get('loading_duration', 0) +
-            cleaning_results['performance_metrics'].get('cleaning_duration', 0) +
+            statistical_results['performance_metrics'].get('statistical_analysis_duration', 0) +  # NEW
             comparison_results['performance_metrics'].get('comparison_duration', 0)
         )
         
-        # Add JSON extraction duration if present
+        # Add JSON extraction and HTML generation durations if present
         if json_extraction_results:
             total_duration += json_extraction_results['performance_metrics'].get('json_extraction_duration', 0)
         
-        # Add HTML generation duration if present
         if html_generation_results:
             html_duration = html_generation_results.get('performance_metrics', {}).get('html_task_duration', 0)
             total_duration += html_duration
@@ -447,16 +519,18 @@ def generate_enhanced_pipeline_summary(config_path: str,
             'total_execution_time_seconds': total_duration,
             'step_performance': {
                 'extraction': extraction_results['performance_metrics'].get('extraction_duration', 0),
-                'normalisation': normalisation_results['performance_metrics'].get('normalisation_duration', 0),
+                'normalisation': normalisation_results['performance_metrics'].get('transformation_duration', 0),
                 'loading': loading_results['performance_metrics'].get('loading_duration', 0),
-                'cleaning': cleaning_results['performance_metrics'].get('cleaning_duration', 0),
+                'statistical_analysis': statistical_results['performance_metrics'].get('statistical_analysis_duration', 0),  # NEW
                 'comparison': comparison_results['performance_metrics'].get('comparison_duration', 0)
             },
             'data_statistics': {
                 'total_datasets_extracted': extraction_results['extracted_datasets'],
                 'total_rows_extracted': extraction_results['total_rows'],
                 'tables_loaded': loading_results['tables_count'],
-                'tables_cleaned': cleaning_results['tables_count'],
+                'tables_statistically_enhanced': statistical_results.get('tables_processed', 0),  # NEW
+                'total_records_enhanced': statistical_results.get('total_records_enhanced', 0),  # NEW
+                'statistical_columns_added_per_table': statistical_results.get('statistical_columns_added', 0),  # NEW
                 'successful_comparisons': comparison_results['successful_comparisons'],
                 'failed_comparisons': comparison_results['failed_comparisons'],
                 'comparison_reports_generated': len(comparison_results.get('saved_report_files', {}))
@@ -465,10 +539,10 @@ def generate_enhanced_pipeline_summary(config_path: str,
                 'extraction': True,
                 'normalisation': True,
                 'loading': True,
-                'cleaning': True,
+                'statistical_analysis': statistical_results.get('analysis_status') == 'success',  # NEW
                 'comparison': True,
                 'json_extraction': json_extraction_results is not None,
-                'html_generation': html_generation_results is not None  # NEW
+                'html_generation': html_generation_results is not None
             }
         }
         
@@ -486,7 +560,6 @@ def generate_enhanced_pipeline_summary(config_path: str,
                 summary['data_statistics']['html_dashboards_generated'] = html_generation_results.get('dashboards_generated', 0)
                 summary['data_statistics']['html_failed_generations'] = html_generation_results.get('failed_generations', 0)
                 
-                # Add output summary
                 output_summary = html_generation_results.get('output_summary', {})
                 if output_summary:
                     summary['html_output'] = {
@@ -498,18 +571,32 @@ def generate_enhanced_pipeline_summary(config_path: str,
                 summary['data_statistics']['html_dashboards_generated'] = 0
                 summary['html_generation_error'] = html_generation_results.get('error', 'Unknown error')
         
-        logger.info("✅ Enhanced pipeline execution summary generated")
-        logger.info(f"📈 Total execution time: {total_duration:.2f} seconds")
+        # Add statistical analysis details
+        if statistical_results.get('analysis_status') == 'success':
+            summary['statistical_analysis'] = {
+                'tables_enhanced': statistical_results.get('tables_processed', 0),
+                'total_records_enhanced': statistical_results.get('total_records_enhanced', 0),
+                'columns_added_per_table': statistical_results.get('statistical_columns_added', 0),
+                'enhancement_rate': '100%' if statistical_results.get('tables_failed', 0) == 0 else f"{(statistical_results.get('tables_processed', 0) / (statistical_results.get('tables_processed', 0) + statistical_results.get('tables_failed', 0))) * 100:.1f}%"
+            }
+        else:
+            summary['statistical_analysis'] = {
+                'status': statistical_results.get('analysis_status', 'failed'),
+                'error': statistical_results.get('errors', ['Unknown error'])[0] if statistical_results.get('errors') else 'Unknown error'
+            }
         
-        if html_generation_results:
-            html_status = html_generation_results.get('pipeline_status', 'Unknown')
-            dashboards_generated = summary['data_statistics'].get('html_dashboards_generated', 0)
-            logger.info(f"🎨 HTML Generation: {html_status} - {dashboards_generated} dashboards")
+        logger.info("Enhanced pipeline execution summary generated successfully")
+        logger.info(f"Total execution time: {total_duration:.2f} seconds")
+        
+        # Log statistical analysis summary
+        if statistical_results.get('analysis_status') == 'success':
+            logger.info(f"Statistical Analysis: {summary['statistical_analysis']['tables_enhanced']} tables enhanced")
+            logger.info(f"Records enhanced: {summary['statistical_analysis']['total_records_enhanced']:,}")
         
         return summary
         
     except Exception as e:
-        logger.error(f"❌ Failed to generate enhanced pipeline summary: {e}")
+        logger.error(f"Failed to generate enhanced pipeline summary: {e}")
         return {
             'pipeline_status': 'PARTIAL_SUCCESS',
             'error': str(e),
@@ -525,9 +612,9 @@ def generate_enhanced_pipeline_summary(config_path: str,
 def extract_comparison_reports_task(config_path: str, comparison_results: Dict[str, Any]) -> Dict[str, Any]:
     """Extract JSON comparison reports with proper timing"""
     logger = get_run_logger()
-    logger.info("🔄 Starting JSON comparison report extraction")
+    logger.info("Starting JSON comparison report extraction")
     
-    # 🔧 FIX: Add timing at task level
+    # FIX: Add timing at task level
     task_start_time = time.time()
     
     try:
@@ -541,7 +628,7 @@ def extract_comparison_reports_task(config_path: str, comparison_results: Dict[s
         logger.info(f"Extracting JSON reports from: {reports_folder}")
         extracted_reports = json_extractor.extract_files(reports_folder, "current")
         
-        # 🔧 FIX: Calculate task-level timing
+        # FIX: Calculate task-level timing
         task_duration = time.time() - task_start_time
         
         extraction_results = {
@@ -551,17 +638,17 @@ def extract_comparison_reports_task(config_path: str, comparison_results: Dict[s
             ),
             'extracted_data': extracted_reports,
             'performance_metrics': {
-                'json_extraction_duration': task_duration  # 🔧 FIX: Use task timing
+                'json_extraction_duration': task_duration  # FIX: Use task timing for counting pipeline duration
             }
         }
         
-        logger.info(f"✅ JSON extraction completed: {extraction_results['extracted_reports']} reports in {task_duration:.2f}s")
-        logger.info(f"📊 Total researcher records: {extraction_results['total_researcher_records']:,}")
+        logger.info(f"JSON extraction completed: {extraction_results['extracted_reports']} reports in {task_duration:.2f}s")
+        logger.info(f"Total researcher records: {extraction_results['total_researcher_records']:,}")
         
         return extraction_results
         
     except Exception as e:
-        logger.error(f"❌ JSON extraction failed: {e}")
+        logger.error(f"JSON extraction failed: {e}")
         raise ExtractionError(f"JSON extraction failed: {e}")
 
 @task(
@@ -582,7 +669,7 @@ def generate_html_dashboards_integrated_task(config_path: str, comparison_result
         HTML generation results
     """
     logger = get_run_logger()
-    logger.info("🎨 Starting integrated HTML dashboard generation")
+    logger.info("Starting integrated HTML dashboard generation")
     
     # Check if HTML generation is available
     if not HTML_GENERATION_AVAILABLE:
@@ -625,7 +712,7 @@ def generate_html_dashboards_integrated_task(config_path: str, comparison_result
         
         logger.info(f"Running HTML generation flow for {comparison_results['successful_comparisons']} comparison reports")
         
-        # 🔧 FIX: Call the correct unified HTML generation flow
+        # FIX: Call the correct unified HTML generation flow
         html_results = unified_html_generation_flow(config_path)
         
         # Calculate task-level timing
@@ -641,22 +728,22 @@ def generate_html_dashboards_integrated_task(config_path: str, comparison_result
             dashboards_generated = html_results.get('dashboards_generated', 0)
             failed_generations = html_results.get('failed_generations', 0)
             
-            logger.info(f"✅ HTML generation completed: {dashboards_generated} dashboards generated, {failed_generations} failed")
-            logger.info(f"📁 Output directory: {html_results.get('output_summary', {}).get('output_directory', 'Unknown')}")
+            logger.info(f"HTML generation completed: {dashboards_generated} dashboards generated, {failed_generations} failed")
+            logger.info(f"Output directory: {html_results.get('output_summary', {}).get('output_directory', 'Unknown')}")
             
             if html_results.get('output_summary', {}).get('files_generated', 0) > 0:
                 total_size = html_results['output_summary'].get('total_size_mb', 0)
-                logger.info(f"📊 Total size: {total_size:.2f} MB")
+                logger.info(f"Total size: {total_size:.2f} MB")
         else:
-            logger.error(f"❌ HTML generation failed: {html_results.get('error', 'Unknown error')}")
+            logger.error(f"HTML generation failed: {html_results.get('error', 'Unknown error')}")
         
         return html_results
         
     except Exception as e:
         task_duration = time.time() - task_start_time
-        logger.error(f"❌ HTML generation task failed: {e}")
+        logger.error(f"HTML generation task failed: {e}")
         
-        # 🔧 FIX: Return consistent error schema
+        # FIX: Return consistent error schema
         return {
             'pipeline_status': 'FAILED',
             'error': str(e),
@@ -676,16 +763,16 @@ def generate_html_dashboards_integrated_task(config_path: str, comparison_result
 
 @flow(
     name="dataset-comparison-pipeline-with-html",
-    description="Complete EtLT pipeline with optional HTML dashboard generation and integrated ESI normalisation",
-    version="2.2.0",  # Increment version to reflect ESI integration
-    timeout_seconds=7200,  # Keep existing timeout
+    description="Complete EtLT pipeline with statistical analysis and HTML dashboard generation",
+    version="2.3.0",  # Increment for statistical analysis
+    timeout_seconds=7200,
     log_prints=True
 )
 def dataset_comparison_flow(config_path: str, 
                           include_json_extraction: bool = False,
                           generate_html: bool = False) -> Dict[str, Any]:
     """
-    Main Prefect flow with optional HTML generation and integrated ESI field normalisation
+    Main Prefect flow with statistical analysis integration
     
     Args:
         config_path: Path to configuration file
@@ -693,60 +780,61 @@ def dataset_comparison_flow(config_path: str,
         generate_html: Whether to generate HTML dashboards
     """
     logger = get_run_logger()
-    logger.info("🚀 Starting Dataset Comparison Pipeline with HTML Generation")
-    logger.info(f"📁 Configuration: {config_path}")
-    logger.info(f"🔧 Enhanced with integrated ESI field normalisation")
-    logger.info(f"🎨 HTML Generation: {'Enabled' if generate_html else 'Disabled'}")
+    logger.info("Starting Dataset Comparison Pipeline with Statistical Analysis")
+    logger.info(f"Configuration: {config_path}")
+    logger.info(f"Statistical Analysis: Enabled")
+    logger.info(f"HTML Generation: {'Enabled' if generate_html else 'Disabled'}")
     
     try:
-        # Original pipeline steps - keeping your exact structure
+        # Original pipeline steps
         validation_results = validate_pipeline_configuration(config_path)
         extraction_results = extract_datasets_task(config_path)
-        
-        # Now includes ESI field normalisation alongside column mapping
         normalisation_results = light_transform_dataframes_task(config_path, extraction_results)
-        
         loading_results = load_to_database_task(config_path, normalisation_results)
-        cleaning_results = clean_data_task(config_path, loading_results)
-        comparison_results = compare_datasets_task(config_path, cleaning_results)
         
-        # Legacy JSON extraction (conditional) - keeping your exact logic
+        # NEW: Statistical analysis instead of cleaning
+        statistical_results = statistical_analysis_task(config_path, loading_results)
+        
+        # Enhanced comparison with statistical data
+        comparison_results = compare_datasets_task(config_path, statistical_results)
+        
+        # Legacy JSON extraction (conditional)
         json_extraction_results = None
         if include_json_extraction:
-            logger.info("🔄 Including legacy JSON extraction")
+            logger.info("Including legacy JSON extraction")
             json_extraction_results = extract_comparison_reports_task(config_path, comparison_results)
         
-        # HTML Dashboard Generation (conditional) - keeping your exact logic
+        # HTML Dashboard Generation (conditional)
         html_generation_results = None
         if generate_html:
-            logger.info("🎨 Including HTML dashboard generation")
+            logger.info("Including HTML dashboard generation")
             html_generation_results = generate_html_dashboards_integrated_task(config_path, comparison_results)
         
-        # Enhanced summary generation - keeping your exact structure
+        # Enhanced summary generation
         pipeline_summary = generate_enhanced_pipeline_summary(
             config_path,
             extraction_results,
-            normalisation_results,  # Now contains ESI normalisation statistics
+            normalisation_results,
             loading_results,
-            cleaning_results,
+            statistical_results,  # NEW: Include statistical results
             comparison_results,
             json_extraction_results,
             html_generation_results
         )
         
-        # Enhanced completion logging
-        logger.info("🎉 Complete pipeline finished successfully!")
+        logger.info("Complete pipeline with statistical analysis finished successfully")
         
-        # NEW: Log ESI normalisation summary if available
-        if 'esi_normalisation_details' in pipeline_summary:
-            esi_details = pipeline_summary['esi_normalisation_details']
-            logger.info(f"🔧 ESI Normalisation completed: {esi_details.get('fields_normalised', 0)} fields normalised across {esi_details.get('dataframes_processed', 0)} DataFrames")
+        # Log statistical enhancement summary
+        if statistical_results.get('analysis_status') == 'success':
+            tables_enhanced = statistical_results.get('tables_processed', 0)
+            records_enhanced = statistical_results.get('total_records_enhanced', 0)
+            logger.info(f"Statistical Enhancement Summary: {tables_enhanced} tables, {records_enhanced:,} records enhanced")
         
         return pipeline_summary
         
     except Exception as e:
-        logger.error(f"💥 Pipeline failed: {e}")
-        logger.error(f"📋 Traceback: {traceback.format_exc()}")
+        logger.error(f"Pipeline with statistical analysis failed: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         
         return {
             'pipeline_status': 'FAILED',
@@ -772,7 +860,7 @@ def validation_only_flow(config_path: str) -> Dict[str, Any]:
         Validation results
     """
     logger = get_run_logger()
-    logger.info("🔍 Running configuration validation only")
+    logger.info("Running configuration validation only")
     
     return validate_pipeline_configuration(config_path)
 
@@ -847,9 +935,9 @@ def serve_flows():
     Serve flows for immediate execution
     This replaces the old deployment system for development
     """
-    print("🚀 Starting Prefect flow server...")
-    print("📊 Dashboard available at: http://127.0.0.1:4200")
-    print("🎛️  You can trigger flows from the dashboard or via CLI")
+    print("Starting Prefect flow server...")
+    print("Dashboard available at: http://127.0.0.1:4200")
+    print("You can trigger flows from the dashboard or via CLI")
     
     # Serve the main flow
     dataset_comparison_flow.serve(
@@ -883,10 +971,10 @@ def dataset_comparison_flow(config_path: str,
         generate_html: Whether to generate HTML dashboards
     """
     logger = get_run_logger()
-    logger.info("🚀 Starting Dataset Comparison Pipeline with HTML Generation")
-    logger.info(f"📁 Configuration: {config_path}")
-    logger.info(f"🔧 Enhanced with integrated ESI field normalisation")
-    logger.info(f"🎨 HTML Generation: {'Enabled' if generate_html else 'Disabled'}")
+    logger.info("Starting Dataset Comparison Pipeline with HTML Generation")
+    logger.info(f"Configuration: {config_path}")
+    logger.info(f"Enhanced with integrated ESI field normalisation")
+    logger.info(f"HTML Generation: {'Enabled' if generate_html else 'Disabled'}")
     
     try:
         # Original pipeline steps - keeping your exact structure
@@ -903,13 +991,13 @@ def dataset_comparison_flow(config_path: str,
         # Legacy JSON extraction (conditional) - keeping your exact logic
         json_extraction_results = None
         if include_json_extraction:
-            logger.info("🔄 Including legacy JSON extraction")
+            logger.info("Including legacy JSON extraction")
             json_extraction_results = extract_comparison_reports_task(config_path, comparison_results)
         
         # HTML Dashboard Generation (conditional) - keeping your exact logic
         html_generation_results = None
         if generate_html:
-            logger.info("🎨 Including HTML dashboard generation")
+            logger.info("Including HTML dashboard generation")
             html_generation_results = generate_html_dashboards_integrated_task(config_path, comparison_results)
         
         # Enhanced summary generation - keeping your exact structure
@@ -925,7 +1013,7 @@ def dataset_comparison_flow(config_path: str,
         )
         
         # Enhanced completion logging
-        logger.info("🎉 Complete pipeline finished successfully!")
+        logger.info("Complete pipeline finished successfully!")
         
         # NEW: Log ESI normalisation summary if available
         if 'esi_normalisation_details' in pipeline_summary:
@@ -935,8 +1023,8 @@ def dataset_comparison_flow(config_path: str,
         return pipeline_summary
         
     except Exception as e:
-        logger.error(f"💥 Pipeline failed: {e}")
-        logger.error(f"📋 Traceback: {traceback.format_exc()}")
+        logger.error(f"Pipeline failed: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         
         return {
             'pipeline_status': 'FAILED',
@@ -977,27 +1065,27 @@ Examples:
     
     # Config file is required for most operations
     if not args.config and not args.serve:
-        print("❌ --config is required unless using --serve")
+        print("--config is required unless using --serve")
         parser.print_help()
         return 1
     
     try:
         if args.serve:
-            print("🚀 Starting Prefect flow server...")
+            print("Starting Prefect flow server...")
             serve_flows()
             return 0
             
         elif args.validate_only:
             print("🔍 Running configuration validation...")
             result = validation_only_flow(args.config)
-            print("✅ Configuration validation completed!")
+            print("Configuration validation completed!")
             return 0
             
         elif args.run:
-            print("🚀 Running full pipeline...")
-            print("🔧 Enhanced with integrated ESI field normalisation")
+            print("Running full pipeline...")
+            print("Enhanced with integrated ESI field normalisation")
             if args.generate_html:
-                print("🎨 HTML dashboard generation enabled")
+                print("HTML dashboard generation enabled")
             
             # Run your existing flow with ESI enhancement
             result = dataset_comparison_flow(
@@ -1007,19 +1095,19 @@ Examples:
             )
             
             print("\n" + "=" * 70)
-            print("📊 PIPELINE EXECUTION SUMMARY")
+            print("PIPELINE EXECUTION SUMMARY")
             print("=" * 70)
             print(f"Status: {result.get('pipeline_status', 'UNKNOWN')}")
             
             if result.get('pipeline_status') == 'SUCCESS':
-                print(f"✅ Total Duration: {result.get('total_execution_time_seconds', 0):.2f} seconds")
-                print(f"📈 Datasets Processed: {result.get('data_statistics', {}).get('total_datasets_extracted', 0)}")
-                print(f"🔄 Comparisons Completed: {result.get('data_statistics', {}).get('successful_comparisons', 0)}")
+                print(f"Total Duration: {result.get('total_execution_time_seconds', 0):.2f} seconds")
+                print(f"Datasets Processed: {result.get('data_statistics', {}).get('total_datasets_extracted', 0)}")
+                print(f"Comparisons Completed: {result.get('data_statistics', {}).get('successful_comparisons', 0)}")
                 
                 # NEW: Show ESI normalisation results
                 esi_fields_normalised = result.get('data_statistics', {}).get('esi_fields_normalised', 0)
                 if esi_fields_normalised > 0:
-                    print(f"🔧 ESI Fields Normalised: {esi_fields_normalised}")
+                    print(f"ESI Fields Normalised: {esi_fields_normalised}")
                 
                 # Show HTML generation results (keeping your existing logic)
                 if result.get('step_completion', {}).get('html_generation', False):
@@ -1027,11 +1115,11 @@ Examples:
                     html_size = result.get('html_output', {}).get('total_size_mb', 0)
                     html_dir = result.get('html_output', {}).get('output_directory', 'Unknown')
                     
-                    print(f"🎨 HTML Dashboards Generated: {html_dashboards}")
-                    print(f"📁 HTML Output Directory: {html_dir}")
-                    print(f"📊 Total HTML Size: {html_size:.2f} MB")
+                    print(f"HTML Dashboards Generated: {html_dashboards}")
+                    print(f"HTML Output Directory: {html_dir}")
+                    print(f"Total HTML Size: {html_size:.2f} MB")
                 
-                print("\n📊 Step Performance:")
+                print("\nStep Performance:")
                 step_perf = result.get('step_performance', {})
                 for step, duration in step_perf.items():
                     if isinstance(duration, (int, float)):
@@ -1044,18 +1132,18 @@ Examples:
                 # NEW: Show ESI normalisation details if available
                 if 'esi_normalisation_details' in result:
                     esi_details = result['esi_normalisation_details']
-                    print(f"\n🔧 ESI Normalisation Details:")
+                    print(f"\nESI Normalisation Details:")
                     print(f"  DataFrames Processed: {esi_details.get('dataframes_processed', 0)}")
                     print(f"  Fields Normalised: {esi_details.get('fields_normalised', 0)}")
                     print(f"  Canonical Fields Available: {esi_details.get('total_canonical_fields', 0)}")
                     
                     if esi_details.get('normalisation_errors', 0) > 0:
-                        print(f"  ⚠️ Normalisation Errors: {esi_details['normalisation_errors']}")
+                        print(f"Normalisation Errors: {esi_details['normalisation_errors']}")
                 
                 print("=" * 70)
                 return 0
             else:
-                print(f"❌ Pipeline failed: {result.get('error', 'Unknown error')}")
+                print(f"Pipeline failed: {result.get('error', 'Unknown error')}")
                 return 1
                 
         else:
@@ -1063,9 +1151,9 @@ Examples:
             return 1
             
     except Exception as e:
-        print(f"\n❌ Execution failed: {e}")
+        print(f"\nExecution failed: {e}")
         if args.verbose:
-            print(f"📋 Traceback: {traceback.format_exc()}")
+            print(f"Traceback: {traceback.format_exc()}")
         return 1
 
 if __name__ == "__main__":
