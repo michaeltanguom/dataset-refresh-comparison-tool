@@ -30,7 +30,7 @@ def null_handling_transform(config_path: str, duplicate_removal_results: Dict[st
     config = ConfigManager(config_path)
     null_config = config.get_null_handling_config()
     
-    strategy = null_config.get('strategy', 'fail')
+    strategy = null_config.get('strategy')
     default_values = null_config.get('default_values', {})
     critical_fields = null_config.get('critical_fields_never_null', ['name', 'esi_field'])
     

@@ -35,7 +35,7 @@ def duplicate_removal_transform(config_path: str, esi_normalisation_results: Dic
         return esi_normalisation_results
     
     check_columns = duplicate_config.get('duplicate_check_columns', ['name', 'esi_field'])
-    strategy = duplicate_config.get('strategy', 'keep_first')
+    strategy = duplicate_config.get('strategy')
     case_sensitive = duplicate_config.get('case_sensitive_matching', False)
     
     # Transform all datasets

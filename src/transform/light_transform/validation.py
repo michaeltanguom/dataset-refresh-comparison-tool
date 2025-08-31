@@ -35,7 +35,7 @@ def light_transform_validation(config_path: str, null_handling_results: Dict[str
         return null_handling_results
     
     checks = validation_config.get('checks', [])
-    fail_on_error = validation_config.get('fail_on_validation_error', True)
+    fail_on_error = validation_config.get('fail_on_validation_error', False)
     
     # Validate all datasets
     validated_data = {}

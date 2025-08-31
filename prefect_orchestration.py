@@ -29,7 +29,7 @@ from src.config.config_validator import ConfigValidator
 # NEW: Import specific extractors instead of PipelineOrchestrator
 from src.extract.excel_extractor import ExcelDataExtractor
 from src.extract.json_extractor import JSONDataExtractor
-from src.extract.light_transform import DataNormaliser
+from src.transform.light_transform.prefect_light_transform_orchestrator import light_transform_orchestrated_flow
     
 # Transform and load components
 from src.load.load_duckdb import DataLoader
@@ -200,58 +200,58 @@ def extract_datasets_task(config_path: str) -> Dict[str, Any]:
         raise ExtractionError(f"Data extraction failed: {e}")
 
 @task(
-    name="light_transform_dataframes",
-    description="Light transform: column normalisation, ESI field standardisation, and data validation",
+    name="light_transform_dataframes_orchestrated",
+    description="Light transform: orchestrated pipeline with individual task control",
     retries=1,
     retry_delay_seconds=15
 )
 def light_transform_dataframes_task(config_path: str, extraction_results: Dict[str, Any]) -> Dict[str, Any]:
     """
-    UPDATED Prefect task for comprehensive light transformation
-    Handles: column mapping + ESI field normalisation + validation
+    UPDATED Prefect task wrapper for orchestrated light transformation pipeline
+    Calls the individual transformation tasks in sequence with fail-fast error handling
     """
     logger = get_run_logger()
-    logger.info("Starting light transformation: column mapping + ESI field normalisation")
+    logger.info("Starting orchestrated light transformation pipeline")
     
     task_start_time = time.time()
     
     try:
-        config = ConfigManager(config_path)
-        normaliser = DataNormaliser(config)  # Now from light_transform module
+        # Call the orchestrated flow
+        transformation_results = light_transform_orchestrated_flow(config_path, extraction_results)
         
-        # Apply all transformations: column mapping + ESI normalisation + validation
-        transformed_data = normaliser.normalise_datasets(
-            extraction_results['extracted_data']
-        )
-        
-        # Get comprehensive transformation summary including ESI stats
-        esi_summary = normaliser.get_normalisation_summary()
+        # Handle pipeline failure
+        if transformation_results.get('pipeline_status') == 'FAILED':
+            raise NormalisationError(f"Orchestrated light transformation failed: {transformation_results.get('error')}")
         
         task_duration = time.time() - task_start_time
         
-        # Enhanced results with ESI normalisation details
-        transformation_results = {
-            'transformed_datasets': len(transformed_data),
-            'transformed_data': transformed_data,  # Renamed from normalised_data for clarity
-            'esi_normalisation_summary': esi_summary,
-            'performance_metrics': {
-                'transformation_duration': task_duration  # Renamed from normalisation_duration
-            }
-        }
+        # Enhance results with task-level timing (adding to the orchestrated timing)
+        transformation_results['performance_metrics']['outer_task_duration'] = task_duration
         
-        # Enhanced logging with ESI details
-        logger.info(f"Light transformation completed: {transformation_results['transformed_datasets']} datasets in {task_duration:.2f}s")
-        logger.info(f"ESI fields normalised: {esi_summary['fields_normalised']} across {esi_summary['dataframes_processed']} DataFrames")
-        logger.info(f"Canonical ESI fields available: {esi_summary['total_canonical_fields']}")
+        # Enhanced logging with orchestration details
+        logger.info(f"Orchestrated light transformation completed: {transformation_results['transformed_datasets']} datasets in {task_duration:.2f}s")
         
-        if esi_summary['normalisation_errors'] > 0:
-            logger.warning(f"ESI normalisation errors: {esi_summary['normalisation_errors']}")
+        # Log individual step performance
+        step_durations = transformation_results['performance_metrics'].get('individual_step_durations', {})
+        for step, duration in step_durations.items():
+            logger.info(f"  {step.replace('_', ' ').title()}: {duration:.2f}s")
+        
+        # Log transformation statistics
+        transform_summary = transformation_results.get('transformation_summary', {})
+        logger.info(f"Transformation statistics:")
+        logger.info(f"  Column mappings applied: {transform_summary.get('column_mapping_changes', 0)}")
+        logger.info(f"  ESI fields normalised: {transform_summary.get('esi_fields_normalised', 0)}")
+        logger.info(f"  Duplicates removed: {transform_summary.get('duplicates_removed', 0)}")
+        logger.info(f"  NULL values processed: {transform_summary.get('null_values_processed', 0)}")
+        
+        if transform_summary.get('validation_warnings', 0) > 0:
+            logger.warning(f"Validation warnings: {transform_summary['validation_warnings']}")
         
         return transformation_results
         
     except Exception as e:
-        logger.error(f"Light transformation failed: {e}")
-        raise NormalisationError(f"Light transformation failed: {e}")
+        logger.error(f"Orchestrated light transformation failed: {e}")
+        raise NormalisationError(f"Orchestrated light transformation failed: {e}")
 
 @task(
     name="load_to_database",

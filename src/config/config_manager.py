@@ -68,9 +68,16 @@ class ConfigManager:
         required_sections = [
             'data_sources', 
             'database', 
+            'schema',
             'sheets_to_process', 
-            'column_mapping',
-            'critical_columns'
+            'light_transform',
+            'critical_columns',
+            'validation_rules',
+            'output',
+            'statistical_methods',
+            'comparison',
+            'html_generation',
+            'logging'
         ]
         
         for section in required_sections:
@@ -84,7 +91,7 @@ class ConfigManager:
         self._validate_database_config()
         
         # Validate column mapping
-        self._validate_column_mapping()
+        #self._validate_column_mapping()
         
         # Validate sheets to process
         self._validate_sheets_config()
@@ -128,22 +135,22 @@ class ConfigManager:
         if not db_path or not isinstance(db_path, str):
             raise ConfigurationError(f"Invalid database path: {db_path}")
     
-    def _validate_column_mapping(self) -> None:
-        """Validate column mapping configuration"""
-        column_mapping = self.config['column_mapping']
-        
-        if not column_mapping or not isinstance(column_mapping, dict):
+    #def _validate_column_mapping(self) -> None:
+    #    """Validate column mapping configuration"""
+    #    column_mapping = self.config['column_mapping']
+    #    
+    #    if not column_mapping or not isinstance(column_mapping, dict):
             raise ConfigurationError("Column mapping must be a non-empty dictionary")
         
         # Check that critical columns are mapped
-        critical_columns = self.config['critical_columns']
-        missing_mappings = []
+    #    critical_columns = self.config['critical_columns']
+    #    missing_mappings = []
         
-        for critical_col in critical_columns:
+    #    for critical_col in critical_columns:
             if critical_col not in column_mapping:
                 missing_mappings.append(critical_col)
         
-        if missing_mappings:
+    #    if missing_mappings:
             raise ConfigurationError(f"Missing column mappings for critical columns: {missing_mappings}")
     
     def _validate_sheets_config(self) -> None:

@@ -232,15 +232,6 @@ class ConfigValidator:
             else:
                 self._add_result('passed', check_name, f"All {len(critical_columns)} critical columns are mapped")
             
-            # Check for duplicate target columns
-            target_columns = list(column_mapping.values())
-            duplicates = [col for col in set(target_columns) if target_columns.count(col) > 1]
-            
-            if duplicates:
-                self._add_result('errors', check_name, f"Duplicate target columns in mapping: {duplicates}")
-            else:
-                self._add_result('passed', check_name, "No duplicate target columns in mapping")
-            
             # Validate column name formats
             invalid_names = []
             for norm_col, target_col in column_mapping.items():

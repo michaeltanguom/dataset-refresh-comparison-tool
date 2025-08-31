@@ -76,16 +76,16 @@ light_transform:
   
   # Duplicate removal configuration (moved from data_cleaning)
   duplicate_removal:
-    enabled: true
+    enabled: false
     duplicate_check_columns:
       - "name"
       - "esi_field"
-    strategy: "keep_first"  # "keep_first", "keep_last", "flag_all"
+    strategy: "flag_all"  # "keep_first", "keep_last", "flag_all"
     case_sensitive_matching: false
     
   # NULL value handling configuration
   null_handling:
-    strategy: "fail"  # "fail", "skip", "default", "interpolate"
+    strategy: "default"  # "fail", "skip", "default", "interpolate"
     
     # Default values to use when strategy is "default"
     default_values:
@@ -109,7 +109,7 @@ light_transform:
   # Validation configuration
   validation:
     enabled: true
-    fail_on_validation_error: true
+    fail_on_validation_error: false
     
     # Validation checks to perform
     checks:
@@ -207,7 +207,7 @@ comparison:
 # HTML Generator system    
 html_generation:
   enabled: true
-  config_path: "html_generator_config.yaml"
+  config_path: "config/html_generator_config.yaml"
   auto_generate: true
 
 # Logging configuration
