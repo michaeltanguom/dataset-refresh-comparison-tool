@@ -239,14 +239,6 @@ class ConfigManager:
             'log_file_path': 'comparison_pipeline.log'
         })
     
-    def get_data_cleaning_config(self) -> Dict[str, Any]:
-        """Get data cleaning configuration"""
-        return self.config.get('data_cleaning', {
-            'remove_duplicates': True,
-            'handle_nulls': {'strategy': 'fail'},
-            'outlier_detection': {'enabled': True}
-        })
-    
     def get_comparison_config(self) -> Dict[str, Any]:
         """Get comparison configuration"""
         return self.config.get('comparison', {
@@ -340,7 +332,7 @@ class ConfigManager:
             'default_schema': self.get_schema_config()['default_schema'],
             'light_transform_enabled': light_transform_config.get('validation', {}).get('enabled', True),
             'esi_normalisation_enabled': light_transform_config.get('esi_normalisation', {}).get('enabled', True),
-            'duplicate_removal_enabled': light_transform_config.get('duplicate_removal', {}).get('enabled', True),
+            'duplicate_detection_enabled': light_transform_config.get('duplicate_detection', {}).get('enabled', True),
             'statistical_methods_enabled': self.get_statistical_methods_config().get('enabled', True)
         }
     
@@ -371,11 +363,11 @@ class ConfigManager:
                 'unknown_field_strategy': 'keep_original',
                 'default_field': 'Unknown'
             },
-            'duplicate_removal': {
+            'duplicate_detection': {
                 'enabled': True,
                 'duplicate_check_columns': ['name', 'esi_field'],
-                'strategy': 'keep_first',
-                'case_sensitive_matching': False
+                'case_sensitive_matching': False,
+                'fail_on_duplicates_found': False,
             },
             'null_handling': {
                 'strategy': 'fail',
@@ -418,14 +410,14 @@ class ConfigManager:
             'default_field': 'Unknown'
         })
 
-    def get_duplicate_removal_config(self) -> Dict[str, Any]:
+    def get_duplicate_detection_config(self) -> Dict[str, Any]:
         """Get duplicate removal configuration from light transform section"""
         light_transform_config = self.get_light_transform_config()
-        duplicate_config = light_transform_config.get('duplicate_removal', {
+        duplicate_config = light_transform_config.get('duplicate_detection', {
             'enabled': True,
             'duplicate_check_columns': ['name', 'esi_field'],
-            'strategy': 'keep_first',
-            'case_sensitive_matching': False
+            'case_sensitive_matching': False,
+            'fail_on_duplicates_found': False,
         })
         
         return duplicate_config

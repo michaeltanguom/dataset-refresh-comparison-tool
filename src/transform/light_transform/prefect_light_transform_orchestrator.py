@@ -18,7 +18,7 @@ from prefect import flow, task, get_run_logger
 # Import individual transformation functions
 from .column_mapping import column_mapping_transform
 from .esi_normalisation import esi_normalisation_transform
-from .duplicate_removal import duplicate_removal_transform
+from .duplicate_detection import duplicate_detection_transform
 from .null_handling import null_handling_transform
 from .validation import light_transform_validation
 
@@ -110,30 +110,33 @@ def esi_normalisation_task(config_path: str, column_mapping_results: Dict[str, A
 
 
 @task(
-    name="duplicate_removal_transformation",
-    description="Remove duplicate records based on configured columns", 
+    name="duplicate_detection_transformation",
+    description="Flag duplicate records for manual review", 
     retries=1,
     retry_delay_seconds=10
 )
-def duplicate_removal_task(config_path: str, esi_normalisation_results: Dict[str, Any]) -> Dict[str, Any]:
+def duplicate_detection_task(config_path: str, esi_normalisation_results: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Prefect task wrapper for duplicate removal
+    Prefect task wrapper for duplicate detection
     
     Args:
         config_path: Path to configuration file
         esi_normalisation_results: Results from ESI normalisation task
         
     Returns:
-        Duplicate removal results
+        Duplicate detection results
     """
     logger = get_run_logger()
-    logger.info("Starting duplicate removal transformation")
+    logger.info("Starting duplicate detection transformation")
     
     task_start_time = time.time()
     
     try:
+        # Import here to avoid circular imports
+        from .duplicate_detection import duplicate_detection_transform
+        
         # Call the transformation function
-        results = duplicate_removal_transform(config_path, esi_normalisation_results)
+        results = duplicate_detection_transform(config_path, esi_normalisation_results)
         
         task_duration = time.time() - task_start_time
         
@@ -142,14 +145,21 @@ def duplicate_removal_task(config_path: str, esi_normalisation_results: Dict[str
             results['performance_metrics'] = {}
         results['performance_metrics']['task_duration'] = task_duration
         
-        logger.info(f"Duplicate removal completed: {results['transformation_summary']['records_changed']} duplicates removed from {results['transformation_summary']['datasets_processed']} datasets in {task_duration:.2f}s")
+        # Log results
+        duplicates_flagged = results['transformation_summary'].get('duplicates_flagged', 0)
+        duplicate_groups = results['transformation_summary'].get('duplicate_groups', 0)
+        
+        if duplicates_flagged > 0:
+            logger.warning(f"DUPLICATES DETECTED: {duplicates_flagged} records across {duplicate_groups} groups")
+            logger.warning("Review duplicates in the generated dashboard before production use")
+        else:
+            logger.info(f"Duplicate detection completed: No duplicates found in {results['transformation_summary']['datasets_processed']} datasets in {task_duration:.2f}s")
         
         return results
         
     except Exception as e:
-        logger.error(f"Duplicate removal transformation failed: {e}")
-        raise NormalisationError(f"Duplicate removal transformation failed: {e}")
-
+        logger.error(f"Duplicate detection transformation failed: {e}")
+        raise NormalisationError(f"Duplicate detection transformation failed: {e}")
 
 @task(
     name="null_handling_transformation",
@@ -157,13 +167,13 @@ def duplicate_removal_task(config_path: str, esi_normalisation_results: Dict[str
     retries=1, 
     retry_delay_seconds=10
 )
-def null_handling_task(config_path: str, duplicate_removal_results: Dict[str, Any]) -> Dict[str, Any]:
+def null_handling_task(config_path: str, duplicate_detection_results: Dict[str, Any]) -> Dict[str, Any]:
     """
     Prefect task wrapper for NULL handling
     
     Args:
         config_path: Path to configuration file
-        duplicate_removal_results: Results from duplicate removal task
+        duplicate_detetction_results: Results from duplicate detection task
         
     Returns:
         NULL handling results
@@ -175,7 +185,7 @@ def null_handling_task(config_path: str, duplicate_removal_results: Dict[str, An
     
     try:
         # Call the transformation function
-        results = null_handling_transform(config_path, duplicate_removal_results)
+        results = null_handling_transform(config_path, duplicate_detection_results)
         
         task_duration = time.time() - task_start_time
         
@@ -241,14 +251,14 @@ def light_transform_validation_task(config_path: str, null_handling_results: Dic
 @flow(
     name="light-transform-orchestrated-pipeline",
     description="Orchestrated light transformation pipeline with individual task control",
-    version="2.0.0",
+    version="2.1.0",  # Updated version for duplicate detection changes
     timeout_seconds=1800,
     log_prints=True
 )
 def light_transform_orchestrated_flow(config_path: str, extraction_results: Dict[str, Any]) -> Dict[str, Any]:
     """
     Orchestrated light transform flow with individual task control
-    Replaces the monolithic light_transform_dataframes_task
+    Updated to use duplicate detection instead of removal
     
     Args:
         config_path: Path to configuration file
@@ -270,11 +280,11 @@ def light_transform_orchestrated_flow(config_path: str, extraction_results: Dict
         # Step 2: ESI field normalisation
         esi_results = esi_normalisation_task(config_path, column_results)
         
-        # Step 3: Duplicate removal
-        duplicate_results = duplicate_removal_task(config_path, esi_results)
+        # Step 3: Duplicate detection (updated from duplicate_removal_task)
+        duplicate_detection_results = duplicate_detection_task(config_path, esi_results)
         
-        # Step 4: NULL handling
-        null_results = null_handling_task(config_path, duplicate_results)
+        # Step 4: NULL handling (updated variable name)
+        null_results = null_handling_task(config_path, duplicate_detection_results)
         
         # Step 5: Final validation
         validation_results = light_transform_validation_task(config_path, null_results)
@@ -289,12 +299,13 @@ def light_transform_orchestrated_flow(config_path: str, extraction_results: Dict
             'transformation_summary': {
                 'total_records_processed': sum(
                     step_results['transformation_summary']['records_processed']
-                    for step_results in [column_results, esi_results, duplicate_results, null_results, validation_results]
+                    for step_results in [column_results, esi_results, duplicate_detection_results, null_results, validation_results]
                 ) // 5,  # Divide by 5 as same records processed in each step
                 'pipeline_steps_completed': 5,
                 'column_mapping_changes': column_results['transformation_summary']['records_changed'],
                 'esi_fields_normalised': esi_results['transformation_summary']['records_changed'],
-                'duplicates_removed': duplicate_results['transformation_summary']['records_changed'],
+                'duplicates_flagged': duplicate_detection_results['transformation_summary']['duplicates_flagged'],  # Updated key
+                'duplicate_groups_found': duplicate_detection_results['transformation_summary']['duplicate_groups'],  # New key
                 'null_values_processed': null_results['transformation_summary']['records_changed'],
                 'validation_warnings': len(validation_results['transformation_summary']['failed_records']),
                 'datasets_processed': validation_results['transformation_summary']['datasets_processed']
@@ -304,7 +315,7 @@ def light_transform_orchestrated_flow(config_path: str, extraction_results: Dict
                 'individual_step_durations': {
                     'column_mapping': column_results['performance_metrics']['task_duration'],
                     'esi_normalisation': esi_results['performance_metrics']['task_duration'],
-                    'duplicate_removal': duplicate_results['performance_metrics']['task_duration'],
+                    'duplicate_detection': duplicate_detection_results['performance_metrics']['task_duration'],  # Updated key
                     'null_handling': null_results['performance_metrics']['task_duration'],
                     'validation': validation_results['performance_metrics']['task_duration']
                 }
@@ -314,6 +325,14 @@ def light_transform_orchestrated_flow(config_path: str, extraction_results: Dict
         logger.info("Orchestrated light transformation pipeline completed successfully")
         logger.info(f"Total pipeline duration: {total_duration:.2f}s")
         logger.info(f"Final datasets ready for loading: {summary['transformed_datasets']}")
+        
+        # Enhanced logging for duplicate detection
+        duplicates_flagged = summary['transformation_summary']['duplicates_flagged']
+        duplicate_groups = summary['transformation_summary']['duplicate_groups_found']
+        
+        if duplicates_flagged > 0:
+            logger.warning(f"Data Quality Alert: {duplicates_flagged} duplicate records flagged across {duplicate_groups} groups")
+            logger.warning("Review duplicate status in generated dashboards before production use")
         
         # Log step-by-step performance breakdown
         step_durations = summary['performance_metrics']['individual_step_durations']

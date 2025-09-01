@@ -74,14 +74,14 @@ light_transform:
     unknown_field_strategy: "keep_original"  # "keep_original", "flag_error", "use_default"
     default_field: "Unknown"
   
-  # Duplicate removal configuration (moved from data_cleaning)
-  duplicate_removal:
-    enabled: false
+    # Duplicate removal configuration (moved from data_cleaning)
+  duplicate_detection:
+    enabled: true
     duplicate_check_columns:
       - "name"
       - "esi_field"
-    strategy: "flag_all"  # "keep_first", "keep_last", "flag_all"
     case_sensitive_matching: false
+    fail_on_duplicates_found: false  # Optional: halt pipeline if duplicates found
     
   # NULL value handling configuration
   null_handling:

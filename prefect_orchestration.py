@@ -35,6 +35,7 @@ from src.transform.light_transform.prefect_light_transform_orchestrator import l
 from src.load.load_duckdb import DataLoader
 from src.transform.clean_duckdb_tables import DataCleaner
 from src.transform.compare_datasets import DataComparator
+from src.transform.compare_tables import SQLDataComparator
     
 # Utilities
 from src.utils.exceptions import (
@@ -476,6 +477,78 @@ def compare_datasets_task(config_path: str, cleaning_results: Dict[str, Any]) ->
         raise ComparisonError(f"Dataset comparison failed: {e}")
 
 @task(
+    name="compare_tables_sql",
+    description="Compare datasets using SQL-based analysis for improved performance",
+    retries=1,
+    retry_delay_seconds=30
+)
+def compare_tables_sql_task(config_path: str, statistical_results: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Prefect task for SQL-based dataset comparison
+    
+    Args:
+        config_path: Path to configuration file
+        statistical_results: Results from statistical analysis task
+        
+    Returns:
+        Comparison results
+    """
+    logger = get_run_logger()
+    logger.info("Starting SQL-based dataset comparison")
+    
+    task_start_time = time.time()
+    
+    try:
+        config = ConfigManager(config_path)
+        comparator = SQLDataComparator(config)
+        
+        # Get table names from statistical results
+        if 'enhanced_tables' in statistical_results:
+            table_names = statistical_results['enhanced_tables']
+        elif 'loaded_tables' in statistical_results:
+            table_names = statistical_results['loaded_tables']
+        else:
+            raise ComparisonError("No table names found in statistical results")
+        
+        # Compare all matching tables using SQL
+        comparison_results = comparator.compare_all_matching_tables(table_names)
+        
+        # Save comparison reports
+        saved_files = comparator.save_comparison_reports(comparison_results)
+        
+        task_duration = time.time() - task_start_time
+        
+        final_results = {
+            'comparison_results': comparison_results,
+            'successful_comparisons': comparison_results['summary']['successful_comparisons'],
+            'failed_comparisons': comparison_results['summary']['failed_comparisons'],
+            'saved_report_files': saved_files,
+            'duplicate_analysis_summary': comparator.extract_duplicate_summary(comparison_results),
+            'outlier_analysis_summary': comparator.extract_outlier_summary(comparison_results),
+            'performance_metrics': {
+                'comparison_duration': task_duration
+            }
+        }
+        
+        logger.info(f"SQL-based comparison completed: {final_results['successful_comparisons']} successful, {final_results['failed_comparisons']} failed in {task_duration:.2f}s")
+        logger.info(f"Reports saved: {len(saved_files)} files")
+        
+        # Log quality analysis summaries
+        dup_summary = final_results['duplicate_analysis_summary']
+        if dup_summary['total_current_duplicates'] > 0:
+            logger.warning(f"Quality Alert - Current duplicates: {dup_summary['total_current_duplicates']}")
+        
+        outlier_summary = final_results['outlier_analysis_summary']
+        if outlier_summary['total_current_outliers'] > 0:
+            logger.info(f"Statistical outliers detected: {outlier_summary['total_current_outliers']}")
+        
+        return final_results
+        
+    except Exception as e:
+        logger.error(f"SQL-based dataset comparison failed: {e}")
+        raise ComparisonError(f"SQL-based dataset comparison failed: {e}")
+
+@task(
     name="generate_enhanced_pipeline_summary",
     description="Generate comprehensive pipeline execution summary with HTML generation",
     retries=0
@@ -763,8 +836,8 @@ def generate_html_dashboards_integrated_task(config_path: str, comparison_result
 
 @flow(
     name="dataset-comparison-pipeline-with-html",
-    description="Complete EtLT pipeline with statistical analysis and HTML dashboard generation",
-    version="2.3.0",  # Increment for statistical analysis
+    description="Complete EtLT pipeline with statistical analysis, duplicate profile detection and HTML dashboard generation",
+    version="3.0.0",  # Increment for statistical analysis
     timeout_seconds=7200,
     log_prints=True
 )
@@ -772,69 +845,76 @@ def dataset_comparison_flow(config_path: str,
                           include_json_extraction: bool = False,
                           generate_html: bool = False) -> Dict[str, Any]:
     """
-    Main Prefect flow with statistical analysis integration
+    Enhanced Prefect flow with duplicate detection and SQL comparison
     
     Args:
         config_path: Path to configuration file
-        include_json_extraction: Whether to include JSON extraction (legacy option)
+        include_json_extraction: Whether to include JSON extraction
         generate_html: Whether to generate HTML dashboards
     """
     logger = get_run_logger()
-    logger.info("Starting Dataset Comparison Pipeline with Statistical Analysis")
+    logger.info("Starting Enhanced Dataset Comparison Pipeline")
     logger.info(f"Configuration: {config_path}")
-    logger.info(f"Statistical Analysis: Enabled")
     logger.info(f"HTML Generation: {'Enabled' if generate_html else 'Disabled'}")
     
     try:
-        # Original pipeline steps
+        # Configuration validation
         validation_results = validate_pipeline_configuration(config_path)
+        
+        # Data extraction
         extraction_results = extract_datasets_task(config_path)
+        
+        # Light transformation (now includes duplicate detection)
         normalisation_results = light_transform_dataframes_task(config_path, extraction_results)
+        
+        # Database loading
         loading_results = load_to_database_task(config_path, normalisation_results)
         
-        # NEW: Statistical analysis instead of cleaning
+        # Statistical analysis (adds outlier detection columns)
         statistical_results = statistical_analysis_task(config_path, loading_results)
         
-        # Enhanced comparison with statistical data
-        comparison_results = compare_datasets_task(config_path, statistical_results)
+        # SQL-based comparison with quality analysis
+        comparison_results = compare_tables_sql_task(config_path, statistical_results)
         
         # Legacy JSON extraction (conditional)
         json_extraction_results = None
         if include_json_extraction:
-            logger.info("Including legacy JSON extraction")
+            logger.info("Including JSON extraction")
             json_extraction_results = extract_comparison_reports_task(config_path, comparison_results)
-        
-        # HTML Dashboard Generation (conditional)
-        html_generation_results = None
+
+        # HTML Dashboard Gneration_results = None
         if generate_html:
             logger.info("Including HTML dashboard generation")
             html_generation_results = generate_html_dashboards_integrated_task(config_path, comparison_results)
         
-        # Enhanced summary generation
+        # Generate enhanced summary
         pipeline_summary = generate_enhanced_pipeline_summary(
             config_path,
             extraction_results,
             normalisation_results,
             loading_results,
-            statistical_results,  # NEW: Include statistical results
+            statistical_results,
             comparison_results,
             json_extraction_results,
             html_generation_results
         )
         
-        logger.info("Complete pipeline with statistical analysis finished successfully")
+        logger.info("Complete pipeline completed successfully")
         
-        # Log statistical enhancement summary
-        if statistical_results.get('analysis_status') == 'success':
-            tables_enhanced = statistical_results.get('tables_processed', 0)
-            records_enhanced = statistical_results.get('total_records_enhanced', 0)
-            logger.info(f"Statistical Enhancement Summary: {tables_enhanced} tables, {records_enhanced:,} records enhanced")
+        # Log quality assessment summary
+        dup_summary = comparison_results.get('duplicate_analysis_summary', {})
+        outlier_summary = comparison_results.get('outlier_analysis_summary', {})
+        
+        if dup_summary.get('total_current_duplicates', 0) > 0:
+            logger.warning(f"Data Quality Alert: {dup_summary['total_current_duplicates']} duplicate records require review")
+        
+        if outlier_summary.get('total_current_outliers', 0) > 0:
+            logger.info(f"Statistical Analysis: {outlier_summary['total_current_outliers']} outlier records detected")
         
         return pipeline_summary
         
     except Exception as e:
-        logger.error(f"Pipeline with statistical analysis failed: {e}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"Complete pipeline failed: {e}")
         
         return {
             'pipeline_status': 'FAILED',

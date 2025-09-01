@@ -16,4 +16,7 @@ CREATE TABLE IF NOT EXISTS "{table_name}" (
     hot_papers INTEGER,
     esi_field VARCHAR NOT NULL,
     indicative_cross_field_score DOUBLE
+    is_duplicate BOOLEAN DEFAULT FALSE,
+    duplicate_profile VARCHAR DEFAULT '',
+    duplicate_group_id VARCHAR DEFAULT '',
 );

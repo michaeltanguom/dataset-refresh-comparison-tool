@@ -60,7 +60,7 @@ class ConfigValidator:
         self._validate_light_transform_configuration()
         self._validate_light_transform_column_mapping()
         self._validate_esi_normalisation_configuration()
-        self._validate_duplicate_removal_configuration()
+        self._validate_duplicate_detection_configuration()
         self._validate_null_handling_configuration()
         self._validate_light_transform_validation_configuration()
         
@@ -361,7 +361,7 @@ class ConfigValidator:
             light_transform_config = self.config.get_light_transform_config()
             
             # Check required sections exist
-            required_sections = ['column_mapping', 'esi_normalisation', 'duplicate_removal', 'null_handling', 'validation']
+            required_sections = ['column_mapping', 'esi_normalisation', 'duplicate_detection', 'null_handling', 'validation']
             
             for section in required_sections:
                 if section not in light_transform_config or not light_transform_config[section]:
@@ -472,17 +472,17 @@ class ConfigValidator:
         except Exception as e:
             self._add_result('errors', check_name, f"Error validating ESI normalisation configuration: {e}")
 
-    def _validate_duplicate_removal_configuration(self) -> None:
-        """Validate duplicate removal configuration"""
-        check_name = "duplicate_removal_configuration"
+    def _validate_duplicate_detection_configuration(self) -> None:
+        """Validate duplicate detection configuration"""
+        check_name = "duplicate_detection_configuration"
         
         try:
-            duplicate_config = self.config.get_duplicate_removal_config()
+            duplicate_config = self.config.get_duplicate_detection_config()
             column_mapping = self.config.get_light_transform_column_mapping()
             
             # Check if enabled
             if not duplicate_config.get('enabled', True):
-                self._add_result('passed', check_name, "Duplicate removal is disabled")
+                self._add_result('passed', check_name, "Duplicate detection is disabled")
                 return
             
             # Validate duplicate check columns exist in column mapping
@@ -497,15 +497,6 @@ class ConfigValidator:
                 self._add_result('errors', check_name, f"Duplicate check columns not found in column mapping: {missing_columns}")
             else:
                 self._add_result('passed', check_name, f"All {len(check_columns)} duplicate check columns are valid")
-            
-            # Validate strategy
-            strategy = duplicate_config.get('strategy', 'keep_first')
-            valid_strategies = ['keep_first', 'keep_last', 'flag_all']
-            
-            if strategy not in valid_strategies:
-                self._add_result('errors', check_name, f"Invalid duplicate removal strategy: {strategy}. Must be one of: {valid_strategies}")
-            else:
-                self._add_result('passed', check_name, f"Duplicate removal strategy is valid: {strategy}")
                 
         except Exception as e:
             self._add_result('errors', check_name, f"Error validating duplicate removal configuration: {e}")
@@ -633,7 +624,7 @@ class ConfigValidator:
                     self._add_result('passed', check_name, "All statistical analysis fields reference valid mapped columns")
             
             # Validate consistency between duplicate removal and critical columns
-            duplicate_config = self.config.get_duplicate_removal_config()
+            duplicate_config = self.config.get_duplicate_detection_config()
             if duplicate_config.get('enabled', True):
                 duplicate_columns = duplicate_config.get('duplicate_check_columns', [])
                 
